@@ -1,0 +1,35 @@
+{
+  "name": "webook_scraper_server",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "swc src --out-dir dist --config-file .swcrc",
+    "start": "node dist/src/index.js",
+    "dev": "nodemon --watch src --ext ts --exec \"npm run build && npm start\"",
+    "typeorm": "typeorm-ts-node-commonjs",
+    "db:seed": "node dist/src/database/seed.js"
+  },
+  "keywords": [],
+  "author": "Fathi Helmi",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@swc/cli": "^0.6.0",
+    "@swc/core": "^1.10.9",
+    "@types/express": "^5.0.0",
+    "@types/node": "^16.11.10",
+    "chokidar": "^4.0.3",
+    "concurrently": "^9.1.2",
+    "ts-node": "10.9.2",
+    "typescript": "5.7.3"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "mysql": "^2.18.1",
+    "pg": "^8.4.0",
+    "puppeteer": "^24.1.1",
+    "reflect-metadata": "^0.1.13",
+    "typeorm": "0.3.20"
+  }
+}
