@@ -1,6 +1,8 @@
 import 'reflect-metadata'
 import { DataSource } from 'typeorm'
 import { User } from './entity/User'
+import { CrawlerSetting } from './entity/CrawlerSetting'
+import WebookAccount from './entity/WebookAccount'
 
 export const AppDataSource = new DataSource({
   type: 'mysql',
@@ -11,7 +13,7 @@ export const AppDataSource = new DataSource({
   database: 'webook_scraper',
   synchronize: true,
   logging: false,
-  entities: [User],
+  entities: [User, CrawlerSetting, WebookAccount],
   migrations: [],
   subscribers: [],
 })

@@ -1,3 +1,5 @@
+import { DataSource } from 'typeorm'
+
 export interface Seeder {
-  seed(): Promise<void>
+  seed(dataSource: DataSource): Promise<void>
 }
