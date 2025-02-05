@@ -11,7 +11,7 @@ export const useUser = defineStore('user', () => {
   async function login(username: string, password: string) {
     try {
       isLoading.value = true
-      const res = await axios.post('http://localhost:3000/api/v1/user/login', {
+      const res = await axios.post(import.meta.env.API_BASE + '/api/v1/user/login', {
         username,
         password,
       })

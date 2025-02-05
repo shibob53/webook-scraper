@@ -15,7 +15,7 @@ export const useSocket = defineStore('socket', () => {
   const ticketsBooked = ref<TicketsBooked[]>([])
 
   function connect() {
-    socket.value = io('http://localhost:3000')
+    socket.value = io(import.meta.env.API_BASE)
 
     socket.value.on('log', (log: Log) => {
       logs.value.push(log)
