@@ -3,7 +3,7 @@ import DashboardLayout from '@/layouts/DashboardLayout.vue'
 </script>
 
 <template>
-  <DashboardLayout title="Events"></DashboardLayout>
+  <DashboardLayout title="Owned Tickets"></DashboardLayout>
 </template>
 
 <style></style>

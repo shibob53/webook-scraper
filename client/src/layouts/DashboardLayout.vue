@@ -79,20 +79,20 @@ const route = useRoute()
               Booked tickets
             </RouterLink>
             <RouterLink
+              to="/owned-tickets"
+              class="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
+              :class="{ 'text-primary bg-muted': route.path === '/event-queue' }"
+            >
+              <Rows3 class="h-4 w-4" />
+              Owned Tickets
+            </RouterLink>
+            <RouterLink
               to="/proxies"
               class="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
               :class="{ 'text-primary bg-muted': route.path === '/proxies' }"
             >
               <EarthLock class="h-4 w-4" />
               Proxies
-            </RouterLink>
-            <RouterLink
-              to="/event-queue"
-              class="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
-              :class="{ 'text-primary bg-muted': route.path === '/event-queue' }"
-            >
-              <Rows3 class="h-4 w-4" />
-              Event Queue
             </RouterLink>
           </nav>
         </div>
