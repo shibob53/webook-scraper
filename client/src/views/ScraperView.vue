@@ -55,7 +55,7 @@ const socket = useSocket()
                 :max="555"
                 v-model="nbAccountsToUse"
               >
-                <Label for="accounts">Accounts to use</Label>
+                <Label for="accounts">Simultaneous connections</Label>
                 <NumberFieldContent>
                   <NumberFieldDecrement />
                   <NumberFieldInput />
