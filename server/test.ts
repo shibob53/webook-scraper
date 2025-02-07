@@ -1,6 +1,10 @@
-import puppeteer from 'puppeteer'
+import puppeteerExtra from 'puppeteer-extra'
+import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 
-puppeteer
+// Add stealth plugin
+puppeteerExtra.use(StealthPlugin())
+
+puppeteerExtra
   .launch({
     headless: false,
     args: [
