@@ -9,6 +9,9 @@ import cors from 'cors'
 import { verifyToken } from './middlewares/auth'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
+import dotenv from 'dotenv'
+
+dotenv.config()
 
 AppDataSource.initialize()
   .then(async () => {

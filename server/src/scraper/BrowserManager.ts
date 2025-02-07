@@ -63,7 +63,7 @@ export class BrowserManager {
    */
   private async launchBrowser() {
     this.browser = await puppeteerExtra.launch({
-      headless: false,
+      headless: true,
       // If you want to see the browser UI, set headless: false
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     })
