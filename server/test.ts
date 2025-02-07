@@ -18,7 +18,7 @@ puppeteer
     await context.overridePermissions('https://webook.com', [])
     const page = await browser.newPage()
     await page.waitForNetworkIdle()
-    // await page.goto('https://webook.com/en/login/')
+    await page.goto('https://webook.com/en/login/')
 
     // await page.type('input[name="email"]', 'ismail1546@postm.net')
     // await page.type('input[name="password"]', 'Qq-123123123')
