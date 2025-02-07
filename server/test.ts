@@ -10,12 +10,12 @@ puppeteerExtra
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
-      '--disable-blink-features=AutomationControlled', // Hide bot detection
-      '--disable-web-security', // Prevent CORS issues
-      '--disable-features=IsolateOrigins,site-per-process', // Improve rendering
-      '--disable-gpu', // Avoid rendering bugs in headless mode
+      '--disable-blink-features=AutomationControlled',
+      '--disable-web-security',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-gpu',
     ],
-    ignoreDefaultArgs: ['--enable-automation'], // Hide "automation" flags
+    ignoreDefaultArgs: ['--enable-automation'],
   })
   .then(async (browser) => {
     const context = browser.defaultBrowserContext()
@@ -46,13 +46,17 @@ puppeteerExtra
     await page.goto(
       'https://webook.com/en/events/tamer-ashour-rs-25-tickets-657480/book'
     )
-
     await page.waitForSelector('[title="seating chart"]', { timeout: 60000 })
 
-    const iframe = await page.$('iframe[title="seating chart"]')
-    const frame = await iframe.contentFrame()
-    await frame.waitForNavigation()
+    const iframeElement = await page.$('iframe[title="seating chart"]')
+    const frame = await iframeElement.contentFrame()
+
+    // Instead of waiting for navigation, wait for a known selector inside the iframe.
+    await frame.waitForSelector('#chartContainer', { timeout: 60000 }) // Replace with an actual selector from the iframe.
+
+    // Short delay if needed.
     await new Promise((resolve) => setTimeout(resolve, 4000))
+
     let objectStateCache = await frame.evaluate(() => {
       console.log(chart)
       let objects = []
@@ -67,7 +71,6 @@ puppeteerExtra
           categoryKey: key.category.key,
         })
       }
-
       return objects
     })
 
@@ -83,11 +86,9 @@ puppeteerExtra
           })
         }
       })
-
       return objects
     })
 
-    //   console.log(objectStateCache)
     console.log(categories)
-    //   browser.close()
+    // browser.close()
   })
