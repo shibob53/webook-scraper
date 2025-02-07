@@ -7,9 +7,10 @@ import { AppDataSource } from '../data-source'
 import WebookAccount from '../entity/WebookAccount'
 import { Server } from 'socket.io'
 
-// Add stealth plugin
+// Add the stealth plugin
 puppeteerExtra.use(StealthPlugin())
 
+// Define types for Seat and Category
 type Seat = {
   status: string
   entrance: boolean
@@ -17,12 +18,15 @@ type Seat = {
   accessible: boolean
   restrictedView: boolean
   type: string
+  categoryKey: number
 }
 
 type Category = {
   label: string
   price: number
   key: number
+  // color is included in test.ts logic; add if needed:
+  color?: string
 }
 
 export class BrowserManager {
@@ -42,8 +46,7 @@ export class BrowserManager {
   }
 
   /**
-   * Get or create a singleton instance of the BrowserManager.
-   * You only want 1 Browser in memory for efficiency.
+   * Get or create the singleton instance.
    */
   public static async getInstance(
     concurrency = 5,
@@ -59,12 +62,11 @@ export class BrowserManager {
   }
 
   /**
-   * Launch the single Puppeteer browser.
+   * Launch the single Puppeteer browser using puppeteer-extra.
    */
   private async launchBrowser() {
     this.browser = await puppeteerExtra.launch({
-      headless: true,
-      // If you want to see the browser UI, set headless: false
+      headless: true, // Set to false for UI debugging
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     })
   }
@@ -79,7 +81,7 @@ export class BrowserManager {
   }
 
   /**
-   * Main function to process N accounts: ensure each is logged in, then do something (like hold tickets).
+   * Process multiple accounts concurrently.
    */
   public async processAccounts(accounts: WebookAccount[], eventUrl?: string) {
     const tasks = accounts.map((account) => async () => {
@@ -87,35 +89,32 @@ export class BrowserManager {
       try {
         const page = await context.newPage()
 
-        // Restore cookies if present
+        // Restore cookies if available
         await this.restoreCookies(account, context)
 
-        // Check if we are logged in, otherwise login
+        // Check login status, login if necessary
         const isLoggedIn = await this.checkLoginStatus(page)
         if (!isLoggedIn) {
           await this.loginAccount(page, account)
-          // Save cookies for next time
           await this.saveCookies(account, context)
         }
 
-        // Example: hold tickets if eventUrl is specified
+        // If an event URL is provided, attempt to hold tickets.
         if (eventUrl) {
           await this.holdTickets(page, eventUrl)
         }
       } catch (err) {
         console.error(`Error processing account ${account.email}:`, err)
       }
-      // finally {
-      //   await context.close()
-      // }
+      // Optionally close the context after processing
+      // await context.close()
     })
 
-    // Run tasks with concurrency limit
     await Promise.all(tasks.map((task) => this.limit(task)))
   }
 
   /**
-   * Restore cookies from the DB into this incognito context.
+   * Restore cookies from the DB into the given incognito context.
    */
   private async restoreCookies(
     account: WebookAccount,
@@ -127,13 +126,13 @@ export class BrowserManager {
           account.cookiesJson
         )
         if (cookies && cookies.length) {
-          cookies.forEach((cookie) =>
-            context.setCookie({
+          for (const cookie of cookies) {
+            await context.setCookie({
               name: cookie.name,
               value: cookie.value,
               domain: cookie.domain,
             })
-          )
+          }
           console.log(`Cookies restored for ${account.email}`)
           this.socket?.emit('log', {
             kind: 'info',
@@ -151,7 +150,7 @@ export class BrowserManager {
   }
 
   /**
-   * Save cookies from this context back to the DB for future reuse.
+   * Save cookies from the current context back to the DB.
    */
   private async saveCookies(account: WebookAccount, context: BrowserContext) {
     const cookies = await context.cookies()
@@ -165,23 +164,20 @@ export class BrowserManager {
   }
 
   /**
-   * Check if the user is already logged in.
-   * This is site-specific. We'll do a simple check: if there's a "Login" link, maybe not logged in.
+   * Check if the user is logged in.
    */
   private async checkLoginStatus(page: Page): Promise<boolean> {
-    // Example: go to homepage
     await page.goto('https://webook.com/en', {
       waitUntil: 'networkidle0',
       timeout: 80000,
     })
-
-    // If there's a login link or button, assume not logged in
+    // If a login button exists, assume the user is not logged in.
     const loginLink = await page.$('a[data-testid="header_nav_login_button"]')
     return !loginLink
   }
 
   /**
-   * Log in the user by filling the form.
+   * Log in the user by filling in the login form.
    */
   private async loginAccount(page: Page, account: WebookAccount) {
     console.log(`Logging in ${account.email}...`)
@@ -189,7 +185,22 @@ export class BrowserManager {
       waitUntil: 'networkidle0',
     })
 
-    // fill the form
+    // Optional: click the "Accept all" button if it appears.
+    await page.evaluate(() => {
+      const xpath = "//button[.//p[contains(text(), 'Accept all')]]"
+      const result = document.evaluate(
+        xpath,
+        document,
+        null,
+        XPathResult.FIRST_ORDERED_NODE_TYPE,
+        null
+      )
+      const acceptButton = result.singleNodeValue as HTMLElement | null
+      if (acceptButton) {
+        acceptButton.click()
+      }
+    })
+
     await page.type('input[name="email"]', account.email)
     await page.type('input[name="password"]', account.password)
     await page.click('button[type="submit"]')
@@ -198,29 +209,28 @@ export class BrowserManager {
   }
 
   /**
-   * Sample "holdTickets" method.
-   * Adjust the selectors/timeouts to match your target site.
+   * Hold tickets by navigating through the event booking pages,
+   * selecting seats via the seating chart iframe, and proceeding to summary.
    */
   private async holdTickets(page: Page, eventUrl: string) {
-    // Go to the event
+    // Go to the event page
     await page.goto(eventUrl, { waitUntil: 'networkidle0' })
 
-    // Example: wait for a "Book" button, then navigate or click
+    // Wait for the "Book" button and navigate to the booking section
     await page.waitForSelector('a[data-testid="book-button"]', {
       timeout: 5000,
     })
     await page.goto(`${eventUrl}/book`, { waitUntil: 'networkidle0' })
 
-    // pick first available day
+    // Handle a possible multi-day event
     const dayButtonSelector = 'button[name="day"]:not([disabled])'
     try {
       await page.waitForSelector(dayButtonSelector, { timeout: 1000 })
       await page.click(dayButtonSelector)
-      // TODO: prompt the user to select a date
       this.socket?.emit('log', {
         kind: 'warning',
         message:
-          'Current Event has multiple dates, going with the most recent one.',
+          'Current Event has multiple dates, selecting the most recent one.',
       })
     } catch (err) {
       console.log('Current Event has only one date')
@@ -229,77 +239,47 @@ export class BrowserManager {
         message: 'Current Event has only one date',
       })
 
-      // just one date, proceed with tickets selection and get the payment link
+      // If categories and seats have not been extracted yet, do so.
       if (this.categories.length === 0) {
         await this.extractCategories(page)
       }
-
       if (this.objectStateCache.length === 0) {
         await this.extractSeats(page)
-        // filter seats that have a free status
+        // Filter for free seats of type "seat"
         this.objectStateCache = this.objectStateCache.filter(
           (seat) => seat.status === 'free' && seat.type === 'seat'
         )
       }
 
-      // select the first available seat
-      // each account can book 5 tickets at a time
-      // since eats are sorted, we can get the index of the last booked seat
-      // and start from there
-
-      let seatIdx = 0
-      if (this.lastBookedSeatIdx) {
-        seatIdx = this.lastBookedSeatIdx + 1
-      }
-
-      let selectedSeats = []
+      // Select up to 5 seats per account.
+      let seatIdx =
+        this.lastBookedSeatIdx !== null ? this.lastBookedSeatIdx + 1 : 0
+      let selectedSeats: string[] = []
       for (let i = seatIdx; i < seatIdx + 5; i++) {
-        if (i >= this.objectStateCache.length) {
-          break
-        }
-
+        if (i >= this.objectStateCache.length) break
         selectedSeats.push(this.objectStateCache[i].seatId)
       }
-      // update the last booked seat index
       this.lastBookedSeatIdx = seatIdx + 4
-
-      // select the seats
-      // "['id1', 'id2']"
 
       const formattedSeatsArraySerialized = JSON.stringify(selectedSeats)
       console.log(
         `seatsio.charts[0].trySelectObjects(${formattedSeatsArraySerialized})`
       )
-      await page.evaluate(
-        `seatsio.charts[0].trySelectObjects(${formattedSeatsArraySerialized})`
-      )
+      // Execute the seat selection using the seating chart API.
+      await page.evaluate((seats) => {
+        // @ts-ignore: assuming seatsio is available globally in the page context
+        seatsio.charts[0].trySelectObjects(seats)
+      }, selectedSeats)
     }
 
     await new Promise((resolve) => setTimeout(resolve, 100))
-
-    // accept terms
     await this.acceptTerms(page)
-
-    // data-testid="ticketing_summary_terms_checkbox"
-    // data-testid="ticketing_summary_resell_terms_checkbox"
-
-    // proceed next
-    // const nextButtonSelector =
-    //   '[data-testid="ticketing_calendar_to_tickets_button"]'
-    // await new Promise((resolve) => setTimeout(resolve, 1000))
-    // await page.click(nextButtonSelector)
-
-    // console.log(`Held tickets for event: ${eventUrl}`)
-    // this.socket?.emit('log', {
-    //   kind: 'info',
-    //   message: `Held tickets for event: ${eventUrl}`,
-    // })
   }
 
+  /**
+   * Accept the ticketing terms and proceed to payment.
+   */
   private async acceptTerms(page: Page) {
-    // data-testid="ticketing_tickets_go_to_summary_button"
-
-    // click on the "Go to Summary" button
     const goToSummaryButtonSelector =
       'button[data-testid="ticketing_tickets_go_to_summary_button"]'
     await page.click(goToSummaryButtonSelector)
@@ -308,23 +288,21 @@ export class BrowserManager {
       'input[data-testid="ticketing_summary_terms_checkbox"]',
       { timeout: 6000 }
     )
-
-    // accept terms
-    await page.evaluate(
-      'document.querySelectorAll(\'input[type="checkbox"]\').forEach(el => el.click())'
-    )
+    // Click on all checkboxes (i.e. accept terms)
+    await page.evaluate(() => {
+      document
+        .querySelectorAll('input[type="checkbox"]')
+        .forEach((el: HTMLInputElement) => el.click())
+    })
 
     await new Promise((resolve) => setTimeout(resolve, 60))
 
-    // data-testid="ticketing_summary_proceed_to_payment"
-    // click on the "Proceed to Payment" button
     const proceedToPaymentButtonSelector =
       '[data-testid="ticketing_summary_proceed_to_payment"]'
-
     await page.click(proceedToPaymentButtonSelector)
 
     await page.waitForNavigation({ waitUntil: 'networkidle0' })
-    this.socket.emit('log', {
+    this.socket?.emit('log', {
       kind: 'info',
       message: 'Proceeded to payment: ' + page.url(),
     })
@@ -332,17 +310,26 @@ export class BrowserManager {
     await page.browserContext().close()
   }
 
+  /**
+   * Extract seating categories from the seating chart iframe.
+   */
   private async extractCategories(page: Page) {
     try {
-      await page.waitForSelector('[title="seating chart"]', { timeout: 6000 })
+      // Wait for the iframe with the seating chart to load.
+      await page.waitForSelector('[title="seating chart"]', { timeout: 60000 })
+      const iframeElement = await page.$('iframe[title="seating chart"]')
+      if (!iframeElement) {
+        throw new Error('Seating chart iframe not found')
+      }
+      const frame = await iframeElement.contentFrame()
 
-      const iframe = await page.$('iframe[title="seating chart"]')
-      const frame = await iframe.contentFrame()
-
+      // Wait for an element inside the iframe (e.g., the chart container)
+      await frame.waitForSelector('#chartContainer', { timeout: 60000 })
       await new Promise((resolve) => setTimeout(resolve, 3000))
       let categories = await frame.evaluate(() => {
-        let objects = []
-        chart.categories.categories.forEach((category) => {
+        let objects: Category[] = []
+        // @ts-ignore: assuming 'chart' is defined in the iframe context
+        chart.categories.categories.forEach((category: any) => {
           if (category.categoryPricing.categoryPricing) {
             objects.push({
               label: category.label,
@@ -352,30 +339,31 @@ export class BrowserManager {
             })
           }
         })
-
         return objects
       })
-
       this.categories = categories
     } catch (err) {
       console.error('Error extracting categories:', err)
-      this.socket.emit('log', {
-        kind: 'error',
-        message: err.message,
-      })
+      this.socket?.emit('log', { kind: 'error', message: err.message })
     }
   }
 
+  /**
+   * Extract seat availability data from the seating chart iframe.
+   */
   private async extractSeats(page: Page) {
     try {
-      await page.waitForSelector('[title="seating chart"]', { timeout: 6000 })
-
-      const iframe = await page.$('iframe[title="seating chart"]')
-      const frame = await iframe.contentFrame()
-
+      await page.waitForSelector('[title="seating chart"]', { timeout: 60000 })
+      const iframeElement = await page.$('iframe[title="seating chart"]')
+      if (!iframeElement) {
+        throw new Error('Seating chart iframe not found')
+      }
+      const frame = await iframeElement.contentFrame()
+      await frame.waitForSelector('#chartContainer', { timeout: 60000 })
       await new Promise((resolve) => setTimeout(resolve, 3000))
       let objectStateCache = await frame.evaluate(() => {
-        let objects = []
+        let objects: Seat[] = []
+        // @ts-ignore: assuming 'chart' is defined in the iframe context
         for (let [key, value] of chart.objectStateCache.entries()) {
           objects.push({
             status: value.isSelectable.value ? 'free' : 'reserved',
@@ -387,16 +375,12 @@ export class BrowserManager {
             categoryKey: key.category.key,
           })
         }
-
         return objects
       })
       this.objectStateCache = objectStateCache
     } catch (err) {
       console.error('Error extracting seats:', err)
-      this.socket.emit('log', {
-        kind: 'error',
-        message: err.message,
-      })
+      this.socket?.emit('log', { kind: 'error', message: err.message })
     }
   }
 }
