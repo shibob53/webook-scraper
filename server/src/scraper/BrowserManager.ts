@@ -66,8 +66,16 @@ export class BrowserManager {
    */
   private async launchBrowser() {
     this.browser = await puppeteerExtra.launch({
-      headless: true, // Set to false for UI debugging
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      headless: false,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-gpu',
+      ],
+      ignoreDefaultArgs: ['--enable-automation'],
     })
   }
 
