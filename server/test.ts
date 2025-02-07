@@ -19,7 +19,7 @@ puppeteer
     const page = await browser.newPage()
     await page.goto('https://webook.com/en/login/')
     await page.waitForNetworkIdle()
-    const [acceptButton] = await page.$x(
+    const [acceptButton] = await page.$$(
       "//button[.//p[contains(text(), 'Accept all')]]"
     )
     if (acceptButton) {
