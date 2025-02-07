@@ -14,6 +14,8 @@ puppeteer
     ignoreDefaultArgs: ['--enable-automation'], // Hide "automation" flags
   })
   .then(async (browser) => {
+    const context = browser.defaultBrowserContext()
+    await context.overridePermissions('https://webook.com', [])
     const page = await browser.newPage()
     await page.waitForNetworkIdle()
     await page.goto('https://webook.com/en/login/')
