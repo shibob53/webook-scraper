@@ -1,6 +1,6 @@
 import puppeteer from 'puppeteer'
 
-puppeteer.launch({ headless: false }).then(async (browser) => {
+puppeteer.launch({ headless: true }).then(async (browser) => {
   const page = await browser.newPage()
   await page.waitForNetworkIdle()
   await page.goto('https://webook.com/en/login/')
