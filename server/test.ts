@@ -19,9 +19,20 @@ puppeteer
     const page = await browser.newPage()
     await page.goto('https://webook.com/en/login/')
     await page.waitForNetworkIdle()
-    const [acceptButton] = await page.$$(
-      "//button[.//p[contains(text(), 'Accept all')]]"
-    )
+    await page.evaluate(() => {
+      const xpath = "//button[.//p[contains(text(), 'Accept all')]]"
+      const result = document.evaluate(
+        xpath,
+        document,
+        null,
+        XPathResult.FIRST_ORDERED_NODE_TYPE,
+        null
+      )
+      const acceptButton = result.singleNodeValue
+      if (acceptButton) {
+        acceptButton.click()
+      }
+    })
     if (acceptButton) {
       await acceptButton.click()
       console.log('Cookie consent accepted.')
