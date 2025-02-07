@@ -30,7 +30,7 @@ export const useScraperStore = defineStore('scraper', () => {
     const user = useUser()
     axios
       .post(
-        'http://localhost:3000/api/v1/crawler/hold-event',
+        import.meta.env.VITE_API_BASE + '/api/v1/crawler/hold-event',
         {
           url,
           nbAccountsToUse,

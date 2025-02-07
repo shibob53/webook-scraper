@@ -15,7 +15,7 @@ export const useSocket = defineStore('socket', () => {
   const ticketsBooked = ref<TicketsBooked[]>([])
 
   function connect() {
-    socket.value = io(import.meta.env.API_BASE)
+    socket.value = io(import.meta.env.VITE_API_BASE)
 
     socket.value.on('log', (log: Log) => {
       logs.value.push(log)
