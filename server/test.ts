@@ -33,12 +33,6 @@ puppeteer
         acceptButton.click()
       }
     })
-    if (acceptButton) {
-      await acceptButton.click()
-      console.log('Cookie consent accepted.')
-    } else {
-      console.log('Cookie consent button not found.')
-    }
 
     await page.type('input[name="email"]', 'ismail1546@postm.net')
     await page.type('input[name="password"]', 'Qq-123123123')
