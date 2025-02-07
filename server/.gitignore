@@ -5,4 +5,4 @@ build/
 tmp/
 temp/
 dist/
-./src/data-source.js
+data-source.js
