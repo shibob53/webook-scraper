@@ -13,7 +13,7 @@ export class TicketGrab {
   @Column({ nullable: false })
   eventUrl: string
 
-  @Column({ nullable: false })
+  @Column({ nullable: true })
   paymentUrl: string
 
   // Raw grabbed seat IDs (stored as a JSON string).
