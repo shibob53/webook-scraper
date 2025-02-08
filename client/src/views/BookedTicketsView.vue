@@ -37,7 +37,7 @@ const CountdownTimer = defineComponent({
   name: 'CountdownTimer',
   props: {
     createdAt: {
-      type: Date,
+      type: String,
       required: true,
     },
   },
@@ -122,7 +122,7 @@ const columns: ColumnDef<TicketGrab>[] = [
           seats = JSON.parse(props.row.original.grabbedSeats)
         }
       } catch (error) {
-        seats = [props.row.original.grabbedSeats]
+        seats = [props.row.original.grabbedSeats || '']
       }
       return h('span', seats.join(', '))
     },
