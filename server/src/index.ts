@@ -8,6 +8,7 @@ import crawler from './routes/crawler'
 import proxies from './routes/proxies'
 import accounts from './routes/accounts'
 import user from './routes/user'
+import grabs from './routes/grabs'
 import cors from 'cors'
 import { verifyToken } from './middlewares/auth'
 import { createServer } from 'http'
@@ -50,6 +51,7 @@ AppDataSource.initialize()
     app.use('/api/v1/settings', settings)
     app.use('/api/v1/proxies', proxies)
     app.use('/api/v1/webook-accounts', accounts)
+    app.use('/api/v1/ticket-grabs', grabs)
 
     server.listen(PORT, () => {
       console.log(`Server is running at http://localhost:${PORT}`)

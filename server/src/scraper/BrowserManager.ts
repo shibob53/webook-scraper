@@ -667,8 +667,14 @@ export class BrowserManager {
           },
         }
       )
-      console.log(data)
-      return false
+
+      // data.data.orders is an array of orders
+      // each order have an event object with a slug property
+      // if the slug is equal to the eventSlug, the event is purchased
+
+      return data.data.orders.some(
+        (order: any) => order.event.slug === eventSlug
+      )
     } else {
       console.error('Event slug not found')
       return false

@@ -26,11 +26,9 @@ export const holdEvent = async (req, res) => {
   })
 
   const accountRepo = AppDataSource.getRepository(WebookAccount)
-  const allAccounts = await accountRepo.find({
-    take: 2,
-  })
+  const allAccounts = await accountRepo.find()
 
-  const manager = await BrowserManager.getInstance(2, io)
+  const manager = await BrowserManager.getInstance(nbAccountsToUse, io)
 
   await manager.processAccounts(allAccounts, url)
 
