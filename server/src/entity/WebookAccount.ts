@@ -1,4 +1,12 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm'
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  Relation,
+  JoinColumn,
+} from 'typeorm'
+import { User } from './User'
 
 @Entity('webook_accounts')
 export default class WebookAccount {
@@ -20,8 +28,15 @@ export default class WebookAccount {
   @Column({ type: 'text', nullable: true })
   cookiesJson: string
 
+  @Column({ default: false })
+  disabled: boolean
+
   @Column({
     default: 'e9aac1f2f0b6c07d6be070ed14829de684264278359148d6a582ca65a50934d2',
   })
   apiToken: string
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'userId' })
+  user: Relation<User>
 }

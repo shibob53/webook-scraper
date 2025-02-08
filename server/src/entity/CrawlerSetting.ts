@@ -5,6 +5,7 @@ import {
   BaseEntity,
   OneToOne,
   Relation,
+  JoinColumn,
 } from 'typeorm'
 import { User } from './User'
 
@@ -13,27 +14,40 @@ export class CrawlerSetting {
   @PrimaryGeneratedColumn()
   id: number
 
-  @Column()
+  @Column({ nullable: false })
   userId: number
 
-  @Column()
+  @Column({ nullable: true })
   currentEventUrl: string
 
-  @Column()
+  @Column({ nullable: true })
   minPrice: number
 
-  @Column()
+  @Column({ nullable: true })
   maxPrice: number
 
-  @Column()
+  @Column({ nullable: true })
   maxTickets: number
 
-  @Column()
+  @Column({ nullable: true })
   ramdomMode: boolean
 
-  @Column()
+  @Column({ nullable: true })
   autoMode: boolean
 
+  @Column({ nullable: true })
+  // if true, the crawler will use proxies
+  useProxies: boolean
+
+  @Column({ nullable: true })
+  // discord webhook to send notifications
+  discordWebhook: string
+
+  @Column({ default: 30 })
+  // interval in minutes for the cron to run to check if even have new tickets
+  recheckInterval: number
+
   @OneToOne(() => User, (user) => user.crawlerSetting)
+  @JoinColumn({ name: 'userId' })
   user: Relation<User>
 }

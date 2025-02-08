@@ -3,13 +3,18 @@ import { AppDataSource } from './data-source'
 import { User } from './entity/User'
 import express from 'express'
 import home from './routes/home'
+import settings from './routes/settings'
 import crawler from './routes/crawler'
+import proxies from './routes/proxies'
+import accounts from './routes/accounts'
 import user from './routes/user'
 import cors from 'cors'
 import { verifyToken } from './middlewares/auth'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import dotenv from 'dotenv'
+import './jobs/checkHoldTokensJob'
+import './jobs/eventQueuedJobs'
 
 dotenv.config()
 
@@ -42,6 +47,9 @@ AppDataSource.initialize()
     app.use('/api/v1/user', user)
     app.use(verifyToken)
     app.use('/api/v1/crawler', crawler)
+    app.use('/api/v1/settings', settings)
+    app.use('/api/v1/proxies', proxies)
+    app.use('/api/v1/webook-accounts', accounts)
 
     server.listen(PORT, () => {
       console.log(`Server is running at http://localhost:${PORT}`)

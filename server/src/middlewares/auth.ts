@@ -1,9 +1,17 @@
-import { RequestHandler } from 'express'
+import { Request, RequestHandler } from 'express'
 import jwt from 'jsonwebtoken'
 import { AppDataSource } from '../data-source'
 import { User } from '../entity/User'
 
-export const verifyToken: RequestHandler = async (req, res, next) => {
+export const verifyToken: RequestHandler = async (
+  req: Request & {
+    user: User | undefined
+    jwt: string
+    decoded: { id: number; username: string }
+  },
+  res,
+  next
+) => {
   try {
     // 1. Parse header
     const authHeader = req.headers.authorization
@@ -30,7 +38,11 @@ export const verifyToken: RequestHandler = async (req, res, next) => {
 
     // 3. Fetch user
     const repo = AppDataSource.getRepository(User)
-    const user = await repo.findOneBy({ id: decoded.id })
+    const user = await repo.findOne({
+      where: { id: decoded.id },
+      relations: ['crawlerSetting', 'proxies', 'queuedEvents'],
+    })
+    console.log('user', user)
 
     if (!user) {
       res.status(401).json({ message: 'User not found' })
@@ -38,13 +50,14 @@ export const verifyToken: RequestHandler = async (req, res, next) => {
     }
 
     // 4. Attach to req
-    req.body.jwt = token
-    req.body.decoded = decoded
-    req.body.user = user
+    req.jwt = token
+    req.decoded = decoded
+    req.user = user
 
     // 5. next() to continue
     next()
   } catch (err) {
+    console.log(err)
     // Catch all JWT or DB errors
     res.status(401).json({ message: 'Unauthorized' })
     return
