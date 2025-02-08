@@ -189,33 +189,40 @@ export class BrowserManager {
     }
     await tempContext.close()
 
-    const tasks = accounts.map(async (account) => {
-      let totalTicketsHeld = 0
-      while (totalTicketsHeld < maxTickets) {
-        const context = await this.browser.createBrowserContext()
-        const page = await context.newPage()
+    // Instead of mapping all accounts concurrently, wrap each in the concurrency limiter.
+    const tasks = accounts.map((account) =>
+      this.limit(async () => {
+        let totalTicketsHeld = 0
+        while (totalTicketsHeld < maxTickets) {
+          const context = await this.browser.createBrowserContext()
+          const page = await context.newPage()
 
-        await this.restoreCookies(account, context)
-        const isLoggedIn = await this.checkLoginStatus(page)
-        if (!isLoggedIn) {
-          await this.loginAccount(page, account)
-          await this.saveCookies(account, context)
+          await this.restoreCookies(account, context)
+          const isLoggedIn = await this.checkLoginStatus(page)
+          if (!isLoggedIn) {
+            await this.loginAccount(page, account)
+            await this.saveCookies(account, context)
+          }
+
+          const ticketsThisRound = await this.holdTickets(
+            page,
+            eventUrl,
+            account
+          )
+          totalTicketsHeld += ticketsThisRound
+          console.log(
+            `Account ${account.email} now has held ${totalTicketsHeld} ticket(s).`
+          )
+          this.socket?.emit('log', {
+            kind: 'info',
+            message: `Account ${account.email} now has held ${totalTicketsHeld} ticket(s).`,
+          })
+
+          // Wait briefly before starting the next iteration.
+          await new Promise((resolve) => setTimeout(resolve, 1000))
         }
-
-        const ticketsThisRound = await this.holdTickets(page, eventUrl, account)
-        totalTicketsHeld += ticketsThisRound
-        console.log(
-          `Account ${account.email} now has held ${totalTicketsHeld} ticket(s).`
-        )
-        this.socket?.emit('log', {
-          kind: 'info',
-          message: `Account ${account.email} now has held ${totalTicketsHeld} ticket(s).`,
-        })
-
-        // Wait briefly before the next iteration.
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-      }
-    })
+      })
+    )
 
     await Promise.all(tasks)
   }
