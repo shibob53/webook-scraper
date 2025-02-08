@@ -360,7 +360,10 @@ export class BrowserManager {
     await page.waitForSelector('a[data-testid="book-button"]', {
       timeout: 5000,
     })
-    await page.goto(`${eventUrl}/book`, { waitUntil: 'networkidle0' })
+    await page.goto(`${eventUrl}/book`, {
+      waitUntil: 'networkidle0',
+      timeout: 60000,
+    })
     await page.evaluate(() => {
       const xpath = "//button[.//p[contains(text(), 'Accept all')]]"
       const result = document.evaluate(
