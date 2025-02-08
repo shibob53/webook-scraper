@@ -40,7 +40,7 @@ export const useUser = defineStore('user', () => {
   }
 
   return {
-    jwt,
+    jwt: computed(() => jwt.value),
     isLoggedIn,
     isLoggingIn,
     login,

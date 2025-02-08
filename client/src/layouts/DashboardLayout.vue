@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+import { useWebookAccountStore } from '@/stores/webookAccount'
 import {
   Bell,
   CircleUser,
@@ -67,7 +68,7 @@ const route = useRoute()
               <UserCog class="h-4 w-4" />
               Accounts
               <Badge class="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full">
-                0
+                {{ useWebookAccountStore().accounts.length }}
               </Badge>
             </RouterLink>
             <RouterLink
@@ -99,7 +100,9 @@ const route = useRoute()
       </div>
     </div>
     <div class="flex flex-col">
-      <header class="flex h-14 items-center gap-4 border-b bg-muted/40 px-4 lg:h-[60px] lg:px-6">
+      <header
+        class="flex max-w-screen w-screen md:w-[calc(100vw-220px)] lg:w-[calc(100vw-280px)] h-14 items-center gap-4 border-b bg-muted/40 px-4 lg:h-[60px] lg:px-6"
+      >
         <Sheet>
           <SheetTrigger as-child>
             <Button variant="outline" size="icon" class="shrink-0 md:hidden">
@@ -165,7 +168,9 @@ const route = useRoute()
           </DropdownMenuContent>
         </DropdownMenu>
       </header>
-      <main class="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
+      <main
+        class="flex max-w-screen w-screen md:w-[calc(100vw-220px)] lg:w-[calc(100vw-280px)] flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6"
+      >
         <div class="flex items-center">
           <h1 class="text-lg font-semibold md:text-2xl">{{ title }}</h1>
         </div>
