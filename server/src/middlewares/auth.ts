@@ -42,7 +42,6 @@ export const verifyToken: RequestHandler = async (
       where: { id: decoded.id },
       relations: ['crawlerSetting', 'proxies', 'queuedEvents'],
     })
-    console.log('user', user)
 
     if (!user) {
       res.status(401).json({ message: 'User not found' })

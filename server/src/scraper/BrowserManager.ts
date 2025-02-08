@@ -75,6 +75,7 @@ export class BrowserManager {
   private seatMutex: Mutex = new Mutex()
   // Optional settings instance – used to determine behavior
   private crawlerSetting?: CrawlerSetting
+  private tickets: Array<Object>
   private limit: (fn: () => Promise<void>) => Promise<void>
 
   public constructor(concurrency = 5) {
@@ -143,7 +144,7 @@ export class BrowserManager {
       }
     }
 
-    const headless = true
+    const headless = false
     this.browser = await puppeteerExtra.launch({
       headless,
       args,
@@ -197,12 +198,37 @@ export class BrowserManager {
           const context = await this.browser.createBrowserContext()
           const page = await context.newPage()
 
+          page.setRequestInterception(true)
+          page.on('request', (request) => {
+            // allow default-poster_1x1.png
+            if (request.url().includes('default-poster_1x1.png')) {
+              return request.continue()
+            }
+
+            if (['image', 'font', 'video'].includes(request.resourceType())) {
+              return request.abort()
+            }
+
+            // block clarity
+            if (
+              request.url().includes('clarity') ||
+              request.url().includes('fullstory')
+            ) {
+              request.abort()
+            } else {
+              request.continue()
+            }
+          })
+
           await this.restoreCookies(account, context)
           const isLoggedIn = await this.checkLoginStatus(page)
           if (!isLoggedIn) {
+            console.log(`Account ${account.email} is not logged in.`)
             await this.loginAccount(page, account)
             await this.saveCookies(account, context)
           }
+          console.log(`Account ${account.email} is logged in.`)
+          console.log(`Account cookies: ${account.cookiesJson}`)
 
           const ticketsThisRound = await this.holdTickets(
             page,
@@ -313,7 +339,7 @@ export class BrowserManager {
     })
     await page.type('input[name="email"]', account.email)
     await page.type('input[name="password"]', account.password)
-    await page.click('button[type="submit"]')
+    await page.keyboard.press('Enter')
     await page.waitForNavigation({ waitUntil: 'networkidle0' })
     console.log(`Logged in as ${account.email}`)
   }
@@ -328,6 +354,13 @@ export class BrowserManager {
     account: WebookAccount
   ): Promise<number> {
     // Accept any "Accept all" button.
+
+    // Navigate to the event and booking page.
+    await page.goto(eventUrl, { waitUntil: 'networkidle0' })
+    await page.waitForSelector('a[data-testid="book-button"]', {
+      timeout: 5000,
+    })
+    await page.goto(`${eventUrl}/book`, { waitUntil: 'networkidle0' })
     await page.evaluate(() => {
       const xpath = "//button[.//p[contains(text(), 'Accept all')]]"
       const result = document.evaluate(
@@ -342,16 +375,17 @@ export class BrowserManager {
         acceptButton.click()
       }
     })
-    // Navigate to the event and booking page.
-    await page.goto(eventUrl, { waitUntil: 'networkidle0' })
-    await page.waitForSelector('a[data-testid="book-button"]', {
-      timeout: 5000,
-    })
-    await page.goto(`${eventUrl}/book`, { waitUntil: 'networkidle0' })
+    await new Promise((resolve) => setTimeout(resolve, 100))
     const dayButtonSelector = 'button[name="day"]:not([disabled])'
     try {
-      await page.waitForSelector(dayButtonSelector, { timeout: 1000 })
-      await page.click(dayButtonSelector)
+      // Wait for the selector to be visible.
+      await page.evaluate((selector) => {
+        const el = document.querySelector(selector)
+        if (el) {
+          el.scrollIntoView({ block: 'center', inline: 'center' })
+          ;(el as HTMLElement).click()
+        }
+      }, dayButtonSelector)
       this.socket?.emit('log', {
         kind: 'warning',
         message:
@@ -511,7 +545,7 @@ export class BrowserManager {
     eventUrl: string,
     account: WebookAccount
   ): Promise<{ cheapestTicket: any; ticketCount: number }> {
-    const tickets = await this.getEventTickets(eventUrl, account)
+    const tickets = await this.getEventTickets(eventUrl, account, page)
     console.log('Tickets:', tickets)
     const cheapestTicket = tickets.reduce((prev, current) =>
       prev.price < current.price ? prev : current
@@ -573,13 +607,20 @@ export class BrowserManager {
   /**
    * Get event tickets from the API.
    */
-  private async getEventTickets(eventUrl: string, account?: WebookAccount) {
+  private async getEventTickets(
+    eventUrl: string,
+    account?: WebookAccount,
+    page?: Page | null | undefined
+  ) {
+    if (this.tickets) return this.tickets
     const url = new URL(eventUrl)
     const pathParts = url.pathname.split('/')
     const eventsIndex = pathParts.indexOf('events')
     if (eventsIndex !== -1 && pathParts.length > eventsIndex + 1) {
       const eventSlug = pathParts[eventsIndex + 1]
-      const cookiesObj = JSON.parse(account!.cookiesJson)
+      let cookiesObj = JSON.parse(account!.cookiesJson)
+      cookiesObj = JSON.parse(account!.cookiesJson)
+
       const jwt = cookiesObj.find((c: any) => c.name === 'token')
       const data = await axios.get(
         `https://api.webook.com/api/v2/event-detail/${eventSlug}?lang=en&visible_in=rs`,
@@ -609,6 +650,8 @@ export class BrowserManager {
         }
         tickets.push(ticket)
       }
+
+      this.tickets = tickets
       return tickets
     } else {
       console.error('Event slug not found')
