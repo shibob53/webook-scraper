@@ -789,7 +789,7 @@ export class BrowserManager {
       const grab = new TicketGrab()
       grab.eventUrl = eventUrl
       grab.grabbedSeats = null
-      delete ticketDetails.description
+      delete ticketDetails.ticket.description
       grab.seatDetails = JSON.stringify(ticketDetails)
       grab.isCategory = true
       grab.isSeat = false
