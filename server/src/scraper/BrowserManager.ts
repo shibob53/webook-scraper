@@ -163,7 +163,7 @@ export class BrowserManager {
       }
     }
 
-    const headless = true
+    const headless = false
     this.browser = await puppeteerExtra.launch({
       headless,
       args,
@@ -293,9 +293,15 @@ export class BrowserManager {
             if (['image', 'font', 'video'].includes(request.resourceType())) {
               return request.abort()
             }
+
+            // googlesyndication
+            //imasdk.googleapis.com
+            // aniview
             if (
               request.url().includes('clarity') ||
-              request.url().includes('fullstory')
+              request.url().includes('fullstory') ||
+              request.url().includes('googlesyndication') ||
+              request.url().includes('imasdk.googleapis.com')
             ) {
               request.abort()
             } else {
@@ -559,7 +565,7 @@ export class BrowserManager {
 
     try {
       // Navigate to the event and booking page.
-      await page.goto(eventUrl, { waitUntil: 'networkidle0' })
+      await page.goto(eventUrl, { waitUntil: 'networkidle0', timeout: 0 })
       await page.waitForSelector('a[data-testid="book-button"]', {
         timeout: 5000,
       })
@@ -641,6 +647,7 @@ export class BrowserManager {
       return ticketsGrabbed
     } catch (err) {
       console.log('Error holding tickets:', err)
+      console.trace()
       return 0
     }
   }
@@ -651,7 +658,7 @@ export class BrowserManager {
    */
   private async holdTicketsIframe(
     page: Page
-  ): Promise<{ selectedSeats: string[]; details: any[] }> {
+  ): Promise<{ selectedSeats: string[]; details: any[]; holdToken: string }> {
     // Ensure categories are loaded.
     if (this.categories.length === 0) {
       await this.extractCategories(page)
@@ -659,6 +666,7 @@ export class BrowserManager {
     // Use the mutex to synchronize access to the seat cache.
     const release = await this.seatMutex.acquire()
     let selectedSeats: string[] = []
+    let holdToken: string = ''
     let details: any[] = []
     try {
       // If the cache is empty, refresh it.
@@ -706,11 +714,12 @@ export class BrowserManager {
       release()
     }
     // Now call the Seats.io function on the page.
-    await page.evaluate((seats) => {
+    holdToken = await page.evaluate((seats) => {
       // @ts-ignore: assuming seatsio is available globally in the page context
       seatsio.charts[0].trySelectObjects(seats)
+      return seatsio.charts[0].holdToken
     }, selectedSeats)
-    return { selectedSeats, details }
+    return { selectedSeats, details, holdToken }
   }
 
   /**
@@ -723,10 +732,12 @@ export class BrowserManager {
   ): Promise<TicketGrab | null> {
     let selectedSeats: string[] = []
     let details: any[] = []
+    let holdToken = ''
     if (await this.eventUsesSeatsio(page)) {
       const res = await this.holdTicketsIframe(page)
       selectedSeats = res.selectedSeats
       details = res.details
+      holdToken = res.holdToken
     } else {
       await this.holdTicketsNonIframe(page, eventUrl, account)
     }
@@ -740,6 +751,7 @@ export class BrowserManager {
       grab.isCategory = !selectedSeats || selectedSeats.length === 0
       grab.isSeat = selectedSeats && selectedSeats.length > 0
       grab.accountId = account.id
+      grab.holdToken = holdToken
       console.log(`Saved grab for account ${account.id} on event ${eventUrl}`)
       await grabRepo.save(grab)
       return grab
@@ -993,18 +1005,20 @@ export class BrowserManager {
    * Waits for navigation to capture the payment URL, then closes the context.
    */
   private async acceptTerms(page: Page, ticketGrab: TicketGrab | null) {
-    // if there's a button with this textContent click it "Skip to payment"
-    const addonsBtn = page.locator('::-p-text("Next: Addons")')
-    if (addonsBtn) {
-      await addonsBtn.click()
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    try {
+      // if there's a button with this textContent click it "Skip to payment"
+      const addonsBtn = page.locator('::-p-text("Next: Addons")')
+      if (addonsBtn) {
+        await addonsBtn.click()
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
 
-    // if there's a button with this textContent click it "Skip to payment"
-    const skipToPaymentButton = page.locator('::-p-text("Skip to payment")')
-    if (skipToPaymentButton) {
-      await skipToPaymentButton.click()
-    }
+      // if there's a button with this textContent click it "Skip to payment"
+      const skipToPaymentButton = page.locator('::-p-text("Skip to payment")')
+      if (skipToPaymentButton) {
+        await skipToPaymentButton.click()
+      }
+    } catch (err) {}
 
     try {
       const goToSummaryButtonSelector =

@@ -19,6 +19,7 @@ export interface TicketGrab {
   isCategory?: boolean
   seatDetails?: string
   accountId: number
+  holdToken?: string
   createdAt: string // You can also use Date if you prefer
 }
 
@@ -146,6 +147,11 @@ const columns: ColumnDef<TicketGrab>[] = [
       }
       return h('span', details || 'N/A')
     },
+  },
+  {
+    id: 'holdToken',
+    header: () => h('span', 'Hold Token'),
+    cell: (props) => h('span', props.row.original.holdToken || 'N/A'),
   },
   {
     id: 'accountId',

@@ -13,6 +13,7 @@ export interface TicketGrab {
   isCategory?: boolean
   seatDetails?: string
   accountId: number
+  holdToken?: string
   createdAt: string // You can also use Date if you prefer
 }
 

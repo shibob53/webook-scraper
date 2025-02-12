@@ -24,6 +24,9 @@ export class TicketGrab {
   isSeat: boolean
 
   @Column({ nullable: true })
+  holdToken: string
+
+  @Column({ nullable: true })
   isCategory: boolean
 
   // Additional seat details (seatId, label, price, color) stored as JSON.
