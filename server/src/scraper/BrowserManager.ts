@@ -735,6 +735,7 @@ export class BrowserManager {
       const grab = new TicketGrab()
       grab.eventUrl = eventUrl
       grab.grabbedSeats = selectedSeats ? JSON.stringify(selectedSeats) : null
+      delete details.description
       grab.seatDetails = details ? JSON.stringify(details) : null
       grab.isCategory = !selectedSeats || selectedSeats.length === 0
       grab.isSeat = selectedSeats && selectedSeats.length > 0
@@ -788,6 +789,7 @@ export class BrowserManager {
       const grab = new TicketGrab()
       grab.eventUrl = eventUrl
       grab.grabbedSeats = null
+      delete ticketDetails.description
       grab.seatDetails = JSON.stringify(ticketDetails)
       grab.isCategory = true
       grab.isSeat = false
