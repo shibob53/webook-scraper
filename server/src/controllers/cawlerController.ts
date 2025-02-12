@@ -1,13 +1,23 @@
+import { Request, Response } from 'express'
 import { AppDataSource } from '../data-source'
 import WebookAccount from '../entity/WebookAccount'
 import { BrowserManager } from '../scraper/BrowserManager'
 import { Crawler } from '../scraper/Crawler'
+import { CrawlerSetting } from '../entity/CrawlerSetting'
+import { User } from '../entity/User'
 
 const crawler = new Crawler()
 
-export const holdEvent = async (req, res) => {
-  const url = req.body.url
-  let nbAccountsToUse = req.body.nbAccountsToUse
+export const holdEvent = async (
+  req: Request & { user: User },
+  res: Response
+) => {
+  const resume = req.body.resume
+  const settings = await AppDataSource.getRepository(CrawlerSetting).findOneBy({
+    userId: req.user.id,
+  })
+  const url = settings?.currentEventUrl
+  let nbAccountsToUse = settings?.simConnections
   let io = req.app.get('io')
   if (!url) {
     res.status(400).send({
@@ -16,25 +26,39 @@ export const holdEvent = async (req, res) => {
     return
   }
 
-  if (!nbAccountsToUse) {
+  if (!nbAccountsToUse || nbAccountsToUse < 1) {
     nbAccountsToUse = 1
   }
 
   io.emit('log', {
     kind: 'info',
-    message: 'holding event: ' + url + ' with ' + nbAccountsToUse + ' accounts',
+    message:
+      'holding event: ' + url + ' with ' + nbAccountsToUse + ' connection(s)',
   })
 
   const accountRepo = AppDataSource.getRepository(WebookAccount)
   const allAccounts = await accountRepo.find()
 
-  const manager = await BrowserManager.getInstance(nbAccountsToUse, io)
+  let manager = null
+  if (BrowserManager.isInitialized()) {
+    manager = BrowserManager.getManager()
+  } else {
+    manager = await BrowserManager.getInstance(nbAccountsToUse, io)
+  }
 
-  await manager.processAccounts(allAccounts, url)
+  // manager.setIsStopped(false)
+  // update settings
+  settings.isStopped = false
+  await AppDataSource.getRepository(CrawlerSetting).save(settings)
+  await manager.updateSettings(settings)
 
-  console.log('Done processing all accounts.')
-  // If you wish, close the browser
-  // await manager.closeBrowser()
+  if (resume) {
+    await manager.resume()
+    await manager.processAccounts(allAccounts, url)
+  } else {
+    await manager.reset()
+    await manager.processAccounts(allAccounts, url)
+  }
 
-  res.send('Event held')
+  res.json({ message: 'Scraper started on event: ' + url })
 }

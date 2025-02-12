@@ -14,8 +14,10 @@ import { verifyToken } from './middlewares/auth'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import dotenv from 'dotenv'
-import './jobs/checkHoldTokensJob'
-import './jobs/eventQueuedJobs'
+// import './jobs/checkHoldTokensJob'
+// import './jobs/eventQueuedJobs'
+import { BrowserManager } from './scraper/BrowserManager'
+import { CrawlerSetting } from './entity/CrawlerSetting'
 
 dotenv.config()
 
@@ -61,6 +63,18 @@ AppDataSource.initialize()
       console.log('a user connected')
       socket.on('disconnect', () => {
         console.log('user disconnected')
+      })
+
+      socket.on('scraper:stop', async (settings) => {
+        console.log('scraper:stop', settings)
+        const repo = AppDataSource.getRepository(CrawlerSetting)
+        settings = await repo.findOneBy({ userId: settings.userId })
+        const manager = BrowserManager.getManager()
+        manager.stop()
+
+        // update settings
+        settings.isStopped = true
+        await repo.save(settings)
       })
     })
   })

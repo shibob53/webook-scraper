@@ -138,6 +138,16 @@ export const useWebookAccountStore = defineStore('webookAccount', {
         this.loading = false
       }
     },
+
+    async clear() {
+      const userStore = useUser()
+      this.accounts = []
+      const response = await axios.post(
+        import.meta.env.VITE_API_BASE + '/api/v1/webook-accounts/clear',
+        {},
+        { headers: { Authorization: `Bearer ${userStore.jwt}` } },
+      )
+    },
   },
   getters: {
     activeAccounts: (state): WebookAccount[] =>

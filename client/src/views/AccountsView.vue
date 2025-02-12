@@ -119,6 +119,7 @@ const handleBulkCreate = async () => {
         <Input class="md:max-w-sm w-full" placeholder="Search" />
       </div>
       <div class="flex gap-2">
+        <Button variant="destructive" @click="store.clear">Clear all</Button>
         <!-- Create New Account Dialog -->
         <Dialog v-model:open="createDialogOpen" modal>
           <DialogTrigger as-child>

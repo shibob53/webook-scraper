@@ -45,74 +45,52 @@ const errors = ref({
 })
 
 const start = async () => {
-  if (!url.value) {
+  if (!store.settings.currentEventUrl) {
     errors.value.url = 'URL is required'
     return
   }
-  if (!url.value.startsWith('https://webook.com/')) {
+  if (!store.settings.currentEventUrl.startsWith('https://webook.com/')) {
     errors.value.url = 'Url should be a webook event'
     return
   }
 
-  if (url.value.endsWith('/book')) {
-    errors.value.url = 'Invalid URL'
+  if (store.settings.currentEventUrl.endsWith('/book')) {
+    errors.value.url = 'Invalid URL, remove /book'
     return
   }
   store.start(url.value, nbAccountsToUse.value)
   showModal.value = false
   url.value = ''
 }
+
+watch(
+  () => store.settings.currentEventUrl,
+  () => {
+    console.log(store)
+    store.resetSettings()
+  },
+)
 </script>
 
 <template>
   <DashboardLayout title="Scraper">
-    <div class="bg-muted p-3 rounded-lg flex items-center justify-between">
-      <div class="text-muted-foreground">Scraper is <span class="font-bold">Off</span></div>
+    <div class="bg-neutral-50/40 p-3 rounded-lg flex items-center justify-between">
+      <div class="">
+        Scraper is
+        <span
+          class="font-bold"
+          :class="{
+            '!text-destructive': store.settingsComputed.isStopped,
+            '!text-green-500': !store.settingsComputed.isStopped,
+          }"
+          >{{ store.settingsComputed.isStopped ? 'Off' : 'On' }}</span
+        >
+      </div>
       <div>
-        <Dialog v-model:open="showModal">
-          <DialogTrigger>
-            <Button> <Play class="size-4" /> Scrape Event </Button>
-          </DialogTrigger>
-
-          <DialogContent class="space-y-2">
-            <div>
-              <Label for="event" :class="errors.url ? 'text-destructive' : ''"> Event URL </Label>
-              <Input
-                v-model="url"
-                @focus="errors.url = ''"
-                :class="errors.url ? 'border-destructive' : ''"
-                id="event"
-                name="event"
-                type="url"
-                placeholder="https://webook.com/en/events/example-event-1234/"
-              />
-              <div v-if="errors.url" class="text-sm text-destructive">{{ errors.url }}</div>
-            </div>
-            <div>
-              <NumberField
-                id="accounts"
-                :default-value="1"
-                :min="1"
-                :max="555"
-                v-model="nbAccountsToUse"
-              >
-                <Label for="accounts">Simultaneous connections</Label>
-                <NumberFieldContent>
-                  <NumberFieldDecrement />
-                  <NumberFieldInput />
-                  <NumberFieldIncrement />
-                </NumberFieldContent>
-              </NumberField>
-            </div>
-            <div class="flex items-center gap-2">
-              <Switch />
-              <Label>Queue for later (book when available)</Label>
-            </div>
-            <div>
-              <Button @click="start"> Start scraping </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <Button v-if="store.settingsComputed.isStopped" @click="start">
+          <Play class="size-4" /> Start Scraper
+        </Button>
+        <Button v-else variant="ghost" @click="store.stop"><StopCircle /> Stop</Button>
       </div>
     </div>
     <div>
@@ -142,6 +120,40 @@ const start = async () => {
         </div>
         <div class="space-y-4 mt-2 p-2" v-if="showSettings">
           <div class="space-y-5 mt-2 p-2 lg:w-2/4">
+            <div>
+              <Label for="event" :class="errors.url ? 'text-destructive' : ''"> Event URL </Label>
+              <Input
+                v-model="store.settings.currentEventUrl"
+                @focus="errors.url = ''"
+                :class="errors.url ? 'border-destructive' : ''"
+                id="event"
+                name="event"
+                type="url"
+                placeholder="https://webook.com/en/events/example-event-1234/"
+              />
+              <div v-if="errors.url" class="text-sm text-destructive">{{ errors.url }}</div>
+            </div>
+            <div>
+              <NumberField
+                id="accounts"
+                :default-value="1"
+                :min="1"
+                :max="555"
+                v-model="store.settings.simConnections"
+              >
+                <Label for="accounts">Simultaneous connections</Label>
+                <NumberFieldContent>
+                  <NumberFieldDecrement />
+                  <NumberFieldInput />
+                  <NumberFieldIncrement />
+                </NumberFieldContent>
+              </NumberField>
+            </div>
+            <div class="flex items-center gap-2">
+              <Switch />
+              <Label>Queue for later (book when available)</Label>
+            </div>
+
             <div class="flex items-center gap-2">
               <Switch v-model:checked="store.settings.useProxies" />
               <Label>Use Proxies</Label>
@@ -165,7 +177,7 @@ const start = async () => {
               </div>
 
               <div class="lg:max-w-sm max-w-full">
-                <Label for="recheck"> Recheck Interval </Label>
+                <Label for="recheck"> Recheck Interval (min) </Label>
                 <NumberField
                   id="recheck"
                   :default-value="store.settings.recheckInterval"
@@ -233,7 +245,16 @@ const start = async () => {
               </div>
 
               <div>
-                <Button @click="store.saveSettings"> Save </Button>
+                <Button
+                  @click="
+                    () => {
+                      store.saveSettings()
+                      showSettings = false
+                    }
+                  "
+                >
+                  Save
+                </Button>
               </div>
             </div>
           </div>

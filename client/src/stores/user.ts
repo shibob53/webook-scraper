@@ -2,8 +2,15 @@ import axios from 'axios'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { computed, onMounted, ref } from 'vue'
 
+type User = {
+  id: number
+  username: string
+  email: string
+}
+
 export const useUser = defineStore('user', () => {
   const jwt = ref('')
+  const user = ref<User | null>(null)
   const isLoggedIn = ref(false)
   const isLoading = ref(false)
   const isLoggingIn = computed(() => isLoading.value)
@@ -16,6 +23,7 @@ export const useUser = defineStore('user', () => {
         password,
       })
       localStorage.setItem('token', res.data.token)
+      localStorage.setItem('user', JSON.stringify(res.data.user))
       jwt.value = res.data.token
 
       await new Promise<void>((resolve) =>
@@ -33,14 +41,17 @@ export const useUser = defineStore('user', () => {
 
   async function init() {
     const token = localStorage.getItem('token')
-    if (token) {
+    const userObj = localStorage.getItem('user')
+    if (token && userObj) {
       jwt.value = token
+      user.value = JSON.parse(userObj)
       isLoggedIn.value = true
     }
   }
 
   return {
     jwt: computed(() => jwt.value),
+    user: computed(() => user.value),
     isLoggedIn,
     isLoggingIn,
     login,

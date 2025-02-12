@@ -70,17 +70,25 @@ export class BrowserManager {
   private categories: Category[] = []
   private socket: Server | null | undefined
   // Flag to indicate if the global seats have been extracted
-  private seatsExtracted: boolean = false
+  private isStopped: boolean = false
+  private currentAccountIndex: number = 0
+  private currentTicketCount: { [accountId: number]: number } = {}
   // Mutex to synchronize access to the seat cache
   private seatMutex: Mutex = new Mutex()
   // Optional settings instance – used to determine behavior
   private crawlerSetting?: CrawlerSetting
   private tickets: Array<Object>
+  private activeContexts: Set<BrowserContext> = new Set()
   private limit: (fn: () => Promise<void>) => Promise<void>
 
   public constructor(concurrency = 5) {
     this.concurrencyLimit = concurrency
     this.limit = pLimit(this.concurrencyLimit)
+  }
+
+  public updateSettings(setting: CrawlerSetting) {
+    BrowserManager.instance.crawlerSetting = setting
+    BrowserManager.instance.isStopped = setting.isStopped
   }
 
   /**
@@ -93,14 +101,25 @@ export class BrowserManager {
   ): Promise<BrowserManager> {
     if (!BrowserManager.instance) {
       const manager = new BrowserManager(concurrency)
-      manager.socket = socket
+      if (socket) {
+        manager.socket = socket
+      }
       if (crawlerSetting) {
         manager.crawlerSetting = crawlerSetting
       }
       await manager.launchBrowser()
+
       BrowserManager.instance = manager
     }
     return BrowserManager.instance
+  }
+
+  public static isInitialized() {
+    return !!this.instance
+  }
+
+  public static getManager() {
+    return this.instance
   }
 
   /**
@@ -156,8 +175,18 @@ export class BrowserManager {
    * Close the browser.
    */
   public async closeBrowser() {
+    for (const context of this.activeContexts) {
+      try {
+        await context.close()
+      } catch (err) {
+        console.error('Error closing context during browser shutdown:', err)
+      }
+    }
+    this.activeContexts.clear()
+
     if (this.browser) {
       await this.browser.close()
+      BrowserManager.instance = null
     }
   }
 
@@ -167,13 +196,40 @@ export class BrowserManager {
    * Before processing accounts, if the event uses Seats.io, perform a one-time global extraction.
    */
   public async processAccounts(accounts: WebookAccount[], eventUrl?: string) {
-    if (
-      !eventUrl &&
-      this.crawlerSetting &&
-      this.crawlerSetting.currentEventUrl
-    ) {
-      eventUrl = this.crawlerSetting.currentEventUrl
+    if (this.isStopped) {
+      console.log('Scraper is stopped, not processing accounts')
+      this.socket?.emit('log', {
+        kind: 'info',
+        message: 'Scraper is stopped, not processing accounts',
+      })
+      return
     }
+
+    // Load progress from crawler settings
+    if (this.crawlerSetting?.lastUsedAccountId) {
+      const lastAccountIndex = accounts.findIndex(
+        (account) => account.id === this.crawlerSetting?.lastUsedAccountId
+      )
+      if (lastAccountIndex !== -1) {
+        this.currentAccountIndex = lastAccountIndex
+        console.log(`Resuming from account index ${this.currentAccountIndex}`)
+        this.socket?.emit('log', {
+          kind: 'info',
+          message: `Resuming from account ${
+            accounts[this.currentAccountIndex].email
+          }`,
+        })
+      }
+    } else {
+      this.currentAccountIndex = 0
+    }
+
+    // Load ticket counts for each account
+    for (const account of accounts) {
+      const ticketCount = await this.getAccountTicketCount(account, eventUrl)
+      this.currentTicketCount[account.id] = ticketCount
+    }
+
     const maxTickets = this.crawlerSetting?.maxTickets ?? 5
 
     // One-time global extraction (if event uses Seats.io)
@@ -182,34 +238,61 @@ export class BrowserManager {
     if (await this.eventUsesSeatsio(tempPage)) {
       await this.extractCategories(tempPage)
       await this.extractSeats(tempPage)
-      this.seatsExtracted = true
-      console.log(
-        'Global seats extracted:',
-        JSON.stringify(this.objectStateCache)
-      )
     }
     await tempContext.close()
 
-    // Instead of mapping all accounts concurrently, wrap each in the concurrency limiter.
-    const tasks = accounts.map((account) =>
+    // Process accounts starting from currentAccountIndex
+    const remainingAccounts = accounts.slice(this.currentAccountIndex)
+    const tasks = remainingAccounts.map((account, index) =>
       this.limit(async () => {
-        let totalTicketsHeld = 0
-        while (totalTicketsHeld < maxTickets) {
-          const context = await this.browser.createBrowserContext()
-          const page = await context.newPage()
+        await this.processAccount(
+          account,
+          eventUrl,
+          maxTickets,
+          this.currentAccountIndex + index
+        )
+      })
+    )
 
+    try {
+      await Promise.all(tasks)
+    } catch (error) {
+      console.error('Error processing accounts:', error)
+      this.socket?.emit('log', {
+        kind: 'error',
+        message: `Error processing accounts: ${error.message}`,
+      })
+    }
+  }
+
+  private async processAccount(
+    account: WebookAccount,
+    eventUrl: string,
+    maxTickets: number,
+    accountIndex: number
+  ) {
+    if (this.isStopped) {
+      return
+    }
+
+    let totalTicketsHeld = this.currentTicketCount[account.id] || 0
+    let context: BrowserContext | null = null
+
+    while (totalTicketsHeld < maxTickets && !this.isStopped) {
+      try {
+        context = await this.browser.createBrowserContext()
+        this.activeContexts.add(context) // Track the context
+        const page = await context.newPage()
+
+        try {
           page.setRequestInterception(true)
           page.on('request', (request) => {
-            // allow default-poster_1x1.png
             if (request.url().includes('default-poster_1x1.png')) {
               return request.continue()
             }
-
             if (['image', 'font', 'video'].includes(request.resourceType())) {
               return request.abort()
             }
-
-            // block clarity
             if (
               request.url().includes('clarity') ||
               request.url().includes('fullstory')
@@ -223,12 +306,9 @@ export class BrowserManager {
           await this.restoreCookies(account, context)
           const isLoggedIn = await this.checkLoginStatus(page)
           if (!isLoggedIn) {
-            console.log(`Account ${account.email} is not logged in.`)
             await this.loginAccount(page, account)
             await this.saveCookies(account, context)
           }
-          console.log(`Account ${account.email} is logged in.`)
-          console.log(`Account cookies: ${account.cookiesJson}`)
 
           const ticketsThisRound = await this.holdTickets(
             page,
@@ -236,6 +316,8 @@ export class BrowserManager {
             account
           )
           totalTicketsHeld += ticketsThisRound
+          this.currentTicketCount[account.id] = totalTicketsHeld
+
           console.log(
             `Account ${account.email} now has held ${totalTicketsHeld} ticket(s).`
           )
@@ -244,13 +326,133 @@ export class BrowserManager {
             message: `Account ${account.email} now has held ${totalTicketsHeld} ticket(s).`,
           })
 
-          // Wait briefly before starting the next iteration.
-          await new Promise((resolve) => setTimeout(resolve, 1000))
-        }
-      })
-    )
+          this.currentAccountIndex = accountIndex
 
-    await Promise.all(tasks)
+          if (this.crawlerSetting) {
+            this.crawlerSetting.lastUsedAccountId = account.id
+            await AppDataSource.getRepository(CrawlerSetting).save(
+              this.crawlerSetting
+            )
+          }
+        } catch (error) {
+          console.error(`Error processing account ${account.email}:`, error)
+          this.socket?.emit('log', {
+            kind: 'error',
+            message: `Error processing account ${account.email}: ${error.message}`,
+          })
+        } finally {
+          if (context) {
+            this.activeContexts.delete(context) // Remove from tracking
+            await context.close()
+          }
+        }
+
+        if (this.isStopped) {
+          break
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+      } catch (contextError) {
+        console.error('Error creating browser context:', contextError)
+        if (context) {
+          this.activeContexts.delete(context)
+          await context.close()
+        }
+      }
+    }
+  }
+
+  private async getAccountTicketCount(
+    account: WebookAccount,
+    eventUrl: string
+  ): Promise<number> {
+    try {
+      const ticketGrabs = await AppDataSource.getRepository(TicketGrab).find({
+        where: {
+          accountId: account.id,
+          eventUrl: eventUrl,
+        },
+      })
+
+      let totalTickets = 0
+      for (const grab of ticketGrabs) {
+        if (grab.grabbedSeats) {
+          const seats = JSON.parse(grab.grabbedSeats)
+          totalTickets += Array.isArray(seats) ? seats.length : 0
+        } else {
+          // For non-seats.io tickets, assume one ticket per grab
+          totalTickets += 1
+        }
+      }
+
+      return totalTickets
+    } catch (error) {
+      console.error(
+        `Error getting ticket count for account ${account.email}:`,
+        error
+      )
+      return 0
+    }
+  }
+
+  public async resume(): Promise<void> {
+    for (const context of this.activeContexts) {
+      try {
+        await context.close()
+      } catch (err) {
+        console.error('Error closing lingering context:', err)
+      }
+    }
+    this.activeContexts.clear()
+
+    this.isStopped = false
+    if (this.crawlerSetting) {
+      this.crawlerSetting.isStopped = false
+      await AppDataSource.getRepository(CrawlerSetting).save(
+        this.crawlerSetting
+      )
+    }
+
+    this.socket?.emit('log', {
+      kind: 'info',
+      message: 'Scraper resumed with clean state.',
+    })
+  }
+
+  public async reset(): Promise<void> {
+    this.currentAccountIndex = 0
+    this.currentTicketCount = {}
+    this.isStopped = false // Reset the stopped flag
+
+    // Close any existing contexts
+    for (const context of this.activeContexts) {
+      try {
+        await context.close()
+      } catch (err) {
+        console.error('Error closing context during reset:', err)
+      }
+    }
+    this.activeContexts.clear()
+
+    // Reset crawler settings
+    if (this.crawlerSetting) {
+      this.crawlerSetting.lastUsedAccountId = null
+      this.crawlerSetting.isStopped = false // Reset the stopped flag in settings
+      await AppDataSource.getRepository(CrawlerSetting).save(
+        this.crawlerSetting
+      )
+    }
+
+    // Restart the browser to ensure clean state
+    if (this.browser) {
+      await this.browser.close()
+      await this.launchBrowser()
+    }
+
+    this.socket?.emit('log', {
+      kind: 'info',
+      message: 'Reset scraper progress and state completely.',
+    })
   }
 
   /**
@@ -355,82 +557,92 @@ export class BrowserManager {
   ): Promise<number> {
     // Accept any "Accept all" button.
 
-    // Navigate to the event and booking page.
-    await page.goto(eventUrl, { waitUntil: 'networkidle0' })
-    await page.waitForSelector('a[data-testid="book-button"]', {
-      timeout: 5000,
-    })
-    await page.goto(`${eventUrl}/book`, {
-      waitUntil: 'networkidle0',
-      timeout: 60000,
-    })
-    await page.evaluate(() => {
-      const xpath = "//button[.//p[contains(text(), 'Accept all')]]"
-      const result = document.evaluate(
-        xpath,
-        document,
-        null,
-        XPathResult.FIRST_ORDERED_NODE_TYPE,
-        null
-      )
-      const acceptButton = result.singleNodeValue as HTMLElement | null
-      if (acceptButton) {
-        acceptButton.click()
-      }
-    })
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    const dayButtonSelector = 'button[name="day"]:not([disabled])'
     try {
-      // Wait for the selector to be visible.
-      await page.evaluate((selector) => {
-        const el = document.querySelector(selector)
-        if (el) {
-          el.scrollIntoView({ block: 'center', inline: 'center' })
-          ;(el as HTMLElement).click()
+      // Navigate to the event and booking page.
+      await page.goto(eventUrl, { waitUntil: 'networkidle0' })
+      await page.waitForSelector('a[data-testid="book-button"]', {
+        timeout: 5000,
+      })
+      await page.goto(`${eventUrl}/book`, {
+        waitUntil: 'networkidle0',
+        timeout: 60000,
+      })
+      await page.evaluate(() => {
+        const xpath = "//button[.//p[contains(text(), 'Accept all')]]"
+        const result = document.evaluate(
+          xpath,
+          document,
+          null,
+          XPathResult.FIRST_ORDERED_NODE_TYPE,
+          null
+        )
+        const acceptButton = result.singleNodeValue as HTMLElement | null
+        if (acceptButton) {
+          acceptButton.click()
         }
-      }, dayButtonSelector)
-      this.socket?.emit('log', {
-        kind: 'warning',
-        message:
-          'Current Event has multiple dates, selecting the most recent one.',
       })
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-      await page.click('[data-testid="ticketing_calendar_to_tickets_button"]')
-    } catch (err) {
-      console.log('Current Event has only one date')
-      this.socket?.emit('log', {
-        kind: 'info',
-        message: 'Current Event has only one date',
-      })
-    }
-
-    let ticketGrab: TicketGrab | null = null
-    let ticketsGrabbed = 0
-    if (await this.eventUsesSeatsio(page)) {
-      const grabResult = await this.holdTicketsAndCreateGrabs(
-        page,
-        eventUrl,
-        account
-      )
-      if (grabResult && grabResult.grabbedSeats) {
-        ticketGrab = grabResult
-        ticketsGrabbed = grabResult.grabbedSeats.length
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      const dayButtonSelector = 'button[name="day"]:not([disabled])'
+      try {
+        // Wait for the selector to be visible.
+        await page.evaluate((selector) => {
+          const el = document.querySelector(selector)
+          if (el) {
+            el.scrollIntoView({ block: 'center', inline: 'center' })
+            ;(el as HTMLElement).click()
+          }
+        }, dayButtonSelector)
+        this.socket?.emit('log', {
+          kind: 'warning',
+          message:
+            'Current Event has multiple dates, selecting the most recent one.',
+        })
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+        // click on the first button[data-testid^="ticketing_calendar_timeslot_button_"]
+        await page.click(
+          'button[data-testid^="ticketing_calendar_timeslot_button_"]'
+        )
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+        await page.click('[data-testid="ticketing_calendar_to_tickets_button"]')
+      } catch (err) {
+        console.log('Current Event has only one date')
+        this.socket?.emit('log', {
+          kind: 'info',
+          message: 'Current Event has only one date',
+        })
       }
-    } else {
-      const nonIframeResult = await this.holdTicketsNonIframe(
-        page,
-        eventUrl,
-        account
-      )
-      ticketsGrabbed = nonIframeResult.ticketCount
-      ticketGrab = await this.createTicketGrabNonIframe(eventUrl, account, {
-        ticket: nonIframeResult.cheapestTicket,
-      })
-    }
 
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    await this.acceptTerms(page, ticketGrab)
-    return ticketsGrabbed
+      let ticketGrab: TicketGrab | null = null
+      let ticketsGrabbed = 0
+      if (await this.eventUsesSeatsio(page)) {
+        const grabResult = await this.holdTicketsAndCreateGrabs(
+          page,
+          eventUrl,
+          account
+        )
+        if (grabResult && grabResult.grabbedSeats) {
+          ticketGrab = grabResult
+          ticketsGrabbed = grabResult.grabbedSeats.length
+        }
+      } else {
+        const nonIframeResult = await this.holdTicketsNonIframe(
+          page,
+          eventUrl,
+          account
+        )
+        ticketsGrabbed = nonIframeResult.ticketCount
+        ticketGrab = await this.createTicketGrabNonIframe(eventUrl, account, {
+          ticket: nonIframeResult.cheapestTicket,
+        })
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      await this.acceptTerms(page, ticketGrab)
+      return ticketsGrabbed
+    } catch (err) {
+      console.log('Error holding tickets:', err)
+      return 0
+    }
   }
 
   /**
@@ -549,11 +761,11 @@ export class BrowserManager {
     account: WebookAccount
   ): Promise<{ cheapestTicket: any; ticketCount: number }> {
     const tickets = await this.getEventTickets(eventUrl, account, page)
-    console.log('Tickets:', tickets)
     const cheapestTicket = tickets.reduce((prev, current) =>
       prev.price < current.price ? prev : current
     )
     await new Promise((resolve) => setTimeout(resolve, 2000))
+    console.log(cheapestTicket)
     console.log(`[data-ticket-name="${cheapestTicket.title}"]`)
     for (let i = 0; i < 5; i++) {
       await page.click(
@@ -616,50 +828,90 @@ export class BrowserManager {
     page?: Page | null | undefined
   ) {
     if (this.tickets) return this.tickets
+
     const url = new URL(eventUrl)
-    const pathParts = url.pathname.split('/')
+    const pathParts = url.pathname.split('/').filter(Boolean) // remove empty strings
+
+    let eventSlug = ''
+
+    // Check for "events" in the URL path.
     const eventsIndex = pathParts.indexOf('events')
     if (eventsIndex !== -1 && pathParts.length > eventsIndex + 1) {
-      const eventSlug = pathParts[eventsIndex + 1]
-      let cookiesObj = JSON.parse(account!.cookiesJson)
-      cookiesObj = JSON.parse(account!.cookiesJson)
-
-      const jwt = cookiesObj.find((c: any) => c.name === 'token')
-      const data = await axios.get(
-        `https://api.webook.com/api/v2/event-detail/${eventSlug}?lang=en&visible_in=rs`,
-        {
-          headers: {
-            Authorization: `Bearer ${jwt.value}`,
-            Token:
-              'e9aac1f2f0b6c07d6be070ed14829de684264278359148d6a582ca65a50934d2',
-          },
-        }
-      )
-      const tickets = []
-      for (const ticket of data.data.data.event_tickets) {
-        if (
-          this.crawlerSetting &&
-          this.crawlerSetting.minPrice &&
-          parseInt(ticket.price) < this.crawlerSetting.minPrice
-        ) {
-          continue
-        }
-        if (
-          this.crawlerSetting &&
-          this.crawlerSetting.maxPrice &&
-          parseInt(ticket.price) > this.crawlerSetting.maxPrice
-        ) {
-          continue
-        }
-        tickets.push(ticket)
-      }
-
-      this.tickets = tickets
-      return tickets
+      eventSlug = pathParts[eventsIndex + 1]
     } else {
+      // Alternatively, check for "experiences".
+      const experiencesIndex = pathParts.indexOf('experiences')
+      if (experiencesIndex !== -1 && pathParts.length > experiencesIndex + 1) {
+        eventSlug = pathParts[experiencesIndex + 1]
+      }
+    }
+
+    if (!eventSlug) {
       console.error('Event slug not found')
       return []
     }
+
+    // Parse the cookies JSON from the account.
+    let cookiesObj = JSON.parse(account!.cookiesJson)
+    const jwt = cookiesObj.find((c: any) => c.name === 'token')
+
+    // Make the API call using the extracted eventSlug.
+    const { data } = await axios.get(
+      `https://api.webook.com/api/v2/event-detail/${eventSlug}?lang=en&visible_in=rs`,
+      {
+        headers: {
+          Authorization: `Bearer ${jwt.value}`,
+          Token:
+            'e9aac1f2f0b6c07d6be070ed14829de684264278359148d6a582ca65a50934d2',
+        },
+      }
+    )
+
+    // Filter tickets based on the crawler settings (minPrice and maxPrice).
+    const tickets = []
+    for (const ticket of data.data.event_tickets) {
+      if (
+        this.crawlerSetting &&
+        this.crawlerSetting.minPrice &&
+        parseInt(ticket.price) < this.crawlerSetting.minPrice
+      ) {
+        continue
+      }
+      if (
+        this.crawlerSetting &&
+        this.crawlerSetting.maxPrice &&
+        parseInt(ticket.price) > this.crawlerSetting.maxPrice
+      ) {
+        continue
+      }
+
+      // check current.end_sale_date isn't expired
+      const now = Date.now()
+      if (ticket.end_sale_date * 1000 < now) {
+        continue
+      }
+
+      tickets.push(ticket)
+    }
+
+    // if tickets is empty stop the scraper and log
+    if (tickets.length === 0) {
+      console.error('No tickets available for this event')
+      this.socket?.emit('log', {
+        kind: 'error',
+        message: 'No tickets available for this event',
+      })
+      this.isStopped = true
+      if (this.crawlerSetting) {
+        this.crawlerSetting.isStopped = true
+        await AppDataSource.getRepository(CrawlerSetting).save(
+          this.crawlerSetting
+        )
+      }
+    }
+
+    this.tickets = tickets
+    return tickets
   }
 
   /**
@@ -739,9 +991,24 @@ export class BrowserManager {
    * Waits for navigation to capture the payment URL, then closes the context.
    */
   private async acceptTerms(page: Page, ticketGrab: TicketGrab | null) {
-    const goToSummaryButtonSelector =
-      'button[data-testid="ticketing_tickets_go_to_summary_button"]'
-    await page.click(goToSummaryButtonSelector)
+    // if there's a button with this textContent click it "Skip to payment"
+    const addonsBtn = page.locator('::-p-text("Next: Addons")')
+    if (addonsBtn) {
+      await addonsBtn.click()
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    // if there's a button with this textContent click it "Skip to payment"
+    const skipToPaymentButton = page.locator('::-p-text("Skip to payment")')
+    if (skipToPaymentButton) {
+      await skipToPaymentButton.click()
+    }
+
+    try {
+      const goToSummaryButtonSelector =
+        'button[data-testid="ticketing_tickets_go_to_summary_button"]'
+      await page.click(goToSummaryButtonSelector)
+    } catch (err) {}
 
     await page.waitForSelector(
       'input[data-testid="ticketing_summary_terms_checkbox"]',
@@ -918,16 +1185,33 @@ export class BrowserManager {
     }
   }
 
-  /**
-   * Helper method to shuffle an array.
-   */
-  private shuffleArray<T>(array: T[]): T[] {
-    const arr = array.slice()
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  public async stop() {
+    this.isStopped = true
+    if (this.crawlerSetting) {
+      this.crawlerSetting.isStopped = true
+      await AppDataSource.getRepository(CrawlerSetting).save(
+        this.crawlerSetting
+      )
     }
-    return arr
+
+    // Close all active contexts
+    for (const context of this.activeContexts) {
+      try {
+        await context.close()
+      } catch (err) {
+        console.error('Error closing context:', err)
+      }
+    }
+    this.activeContexts.clear()
+
+    this.socket?.emit('log', {
+      kind: 'info',
+      message: 'Scraper stopped and all browser contexts closed.',
+    })
+  }
+
+  public setIsStopped(value: boolean) {
+    BrowserManager.instance.isStopped = value
   }
 
   public eventHasTickets(url: string): boolean {

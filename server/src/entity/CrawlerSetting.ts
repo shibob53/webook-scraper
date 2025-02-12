@@ -47,6 +47,16 @@ export class CrawlerSetting {
   // interval in minutes for the cron to run to check if even have new tickets
   recheckInterval: number
 
+  @Column({ nullable: true })
+  // if true, the crawler will stop
+  isStopped: boolean
+
+  @Column({ nullable: true })
+  simConnections: number
+
+  @Column({ nullable: true })
+  lastUsedAccountId: number
+
   @OneToOne(() => User, (user) => user.crawlerSetting)
   @JoinColumn({ name: 'userId' })
   user: Relation<User>

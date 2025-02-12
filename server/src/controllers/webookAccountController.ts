@@ -240,6 +240,25 @@ const listWebookAccounts = async (req: Request, res: Response) => {
   }
 }
 
+/**
+ * Clear all WebookAccounts.
+ * This method removes all records from the WebookAccount table.
+ */
+const clearAllWebookAccounts = async (req: Request, res: Response) => {
+  try {
+    const accountRepo = AppDataSource.getRepository(WebookAccount)
+    await accountRepo.clear() // Removes all entries in the table
+    res.status(200).json({ message: 'All WebookAccounts cleared successfully' })
+    return
+  } catch (error: any) {
+    console.error('Error clearing WebookAccounts:', error)
+    res
+      .status(500)
+      .json({ message: 'Error clearing WebookAccounts', error: error.message })
+    return
+  }
+}
+
 export {
   addWebookAccount,
   importWebookAccounts,
@@ -247,4 +266,5 @@ export {
   updateWebookAccount,
   deleteWebookAccount,
   listWebookAccounts,
+  clearAllWebookAccounts,
 }
