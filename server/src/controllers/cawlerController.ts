@@ -18,6 +18,7 @@ export const holdEvent = async (
   })
   const url = settings?.currentEventUrl
   let nbAccountsToUse = settings?.simConnections
+  console.log('nbAccountsToUse', nbAccountsToUse)
   let io = req.app.get('io')
   if (!url) {
     res.status(400).send({
