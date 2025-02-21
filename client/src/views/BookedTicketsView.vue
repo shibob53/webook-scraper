@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { defineComponent, h, onMounted, ref, onUnmounted } from 'vue'
+import { defineComponent, h, onMounted, ref, onUnmounted, watch } from 'vue'
 import DataTable from '@/components/DataTable.vue'
 import DashboardLayout from '@/layouts/DashboardLayout.vue'
 import { Button } from '@/components/ui/button'
@@ -189,6 +189,10 @@ onMounted(async () => {
   console.log('TicketGrabs:', data.value)
 })
 
+watch(() => store.ticketGrabs, () => {
+  data.value = store.ticketGrabs
+})
+
 const onRowSelected = (selected: TicketGrab[]) => {
   console.log('Selected rows:', selected)
 }
@@ -196,6 +200,13 @@ const onRowSelected = (selected: TicketGrab[]) => {
 
 <template>
   <DashboardLayout title="Ticket Grabs">
+    <div
+      class="flex justify-between md:items-center flex-col md:flex-row space-y-2 md:space-y-0 mb-4"
+    >
+      <div class="flex gap-2 justify-end w-full">
+        <Button variant="ghost" @click="store.refresh">Refresh</Button>
+      </div>
+    </div>
     <DataTable :columns="columns" :data="data" @update:selected="onRowSelected" />
   </DashboardLayout>
 </template>

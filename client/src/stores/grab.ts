@@ -50,6 +50,20 @@ export const useTicketGrabsStore = defineStore('ticketGrabs', {
       }
     },
 
+    async refresh() {
+      try {
+        const userStore = useUser()
+        const response = await axios.get(import.meta.env.VITE_API_BASE + '/api/v1/ticket-grabs', {
+          headers: { Authorization: `Bearer ${userStore.jwt}` },
+        })
+        // Assuming the response structure is: { ticketGrabs: [...] }
+        this.ticketGrabs = response.data.ticketGrabs
+        this.error = null
+      } catch (error: any) {
+        this.error = error.response?.data?.message || error.message || 'Error fetching ticket grabs'
+      }
+    },
+
     // Add a new TicketGrab.
     // Expects a ticket grab object (without id and createdAt) to be passed.
     async addTicketGrab(grabData: Omit<TicketGrab, 'id' | 'createdAt'>) {
