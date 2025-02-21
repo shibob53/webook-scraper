@@ -64,6 +64,19 @@ export const useTicketGrabsStore = defineStore('ticketGrabs', {
       }
     },
 
+    async moveToOwned(grabId: number) {
+      await axios.post(
+        import.meta.env.VITE_API_BASE + '/api/v1/owned/create',
+        {
+          grabId,
+        },
+        {
+          headers: { Authorization: `Bearer ${useUser().jwt}` },
+        },
+      )
+      this.ticketGrabs = this.ticketGrabs.filter((t) => t.id != grabId)
+    },
+
     // Add a new TicketGrab.
     // Expects a ticket grab object (without id and createdAt) to be passed.
     async addTicketGrab(grabData: Omit<TicketGrab, 'id' | 'createdAt'>) {

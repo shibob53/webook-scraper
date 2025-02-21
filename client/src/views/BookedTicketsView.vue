@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import type { ColumnDef } from '@tanstack/vue-table'
 import { EllipsisVertical } from 'lucide-vue-next'
 import { useTicketGrabsStore } from '@/stores/grab'
+import TicketsGrabActionCell from '@/components/TicketsGrabActionCell.vue'
 
 // {"ticket":{"_id":"677bb668bff236b5e10253eb","title":"GA Ticket","description":"","quantity":"25000","price":"0","original_price":"0","vat":"0","currency":"SAR","type":"ticket","requires_entry_ticket":false,"start_sale_date":1726434048,"start_sale_date_str":"Monday 16th September 2024, 12:00am","end_sale_date":1739040633,"end_sale_date_str":"Saturday 8th February 2025, 9:50pm","min_per_order":"1","max_per_order":"100","seats_io_category":"","ticket_color":"#d51515","text_color":"#ffffff","sold_out":false,"remaining":18373,"sale_status":"ongoing","require_admin_approval":false,"allow_unjoin":"no","ticket_order":1,"gallery_images":[],"has_group":false,"group_name":null,"group_name_en":null,"group_description":null,"group_rt_description":null,"group_gallery_images":null,"has_merch":"false","is_resellable":false,"resell_counter":null,"ticket_type":null,"app_store_product_id":null,"subscription_ticket_type_id":"66a7777d6b3f5d3d1209f3cd","subscription_ticket_type":{"_id":"66a7777d6b3f5d3d1209f3cd","title":"Default ticket","description":"<p>Default ticket type</p>","slug":"noaa-ltthkr-l-ftr-dy","icon":"","background_color":"#000000"},"ignore_user_order_limit":false}}
 
@@ -174,7 +175,7 @@ const columns: ColumnDef<TicketGrab>[] = [
             onClick: () => console.log('Action clicked for TicketGrab ID:', props.row.original.id),
             variant: 'ghost',
           },
-          () => h(EllipsisVertical),
+          () => h(TicketsGrabActionCell, {row: props.row.original}),
         ),
       ]),
   },
