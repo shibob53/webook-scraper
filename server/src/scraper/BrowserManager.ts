@@ -1,7 +1,7 @@
 import puppeteer, { Browser, BrowserContext, Page, Protocol } from 'puppeteer'
 import puppeteerExtra from 'puppeteer-extra'
 import StealthPlugin from 'puppeteer-extra-plugin-stealth'
-import pLimit from 'p-limit'
+import pLimit, { Limit } from 'p-limit'
 import { AppDataSource } from '../data-source'
 import WebookAccount from '../entity/WebookAccount'
 import { Server } from 'socket.io'
@@ -79,16 +79,26 @@ export class BrowserManager {
   private crawlerSetting?: CrawlerSetting
   private tickets: Array<Object>
   private activeContexts: Set<BrowserContext> = new Set()
-  private limit: (fn: () => Promise<void>) => Promise<void>
+  private limit: Limit
 
   public constructor(concurrency = 5) {
     this.concurrencyLimit = concurrency
     this.limit = pLimit(this.concurrencyLimit)
   }
 
-  public updateSettings(setting: CrawlerSetting) {
-    BrowserManager.instance.crawlerSetting = setting
-    BrowserManager.instance.isStopped = setting.isStopped
+  public updateSettings(setting: CrawlerSetting, reinit = false) {
+    const socket = this.getSocket()
+    BrowserManager.instance = null
+    BrowserManager.getInstance(
+      setting.simConnections,
+      socket,
+      setting
+    )
+
+    this.limit.clearQueue()
+    this.currentAccountIndex = -1
+
+    console.log('settings updated for manager')
   }
 
   /**
@@ -120,6 +130,10 @@ export class BrowserManager {
 
   public static getManager() {
     return this.instance
+  }
+
+  public getSocket() {
+    return this.socket
   }
 
   /**
@@ -1182,7 +1196,6 @@ export class BrowserManager {
         this.crawlerSetting &&
         (this.crawlerSetting.minPrice || this.crawlerSetting.maxPrice)
       ) {
-        
         objectStateCache = objectStateCache.filter((seat) => {
           const cat = this.categories.find((c) => c.key === seat.categoryKey)
           if (!cat) return false
@@ -1194,11 +1207,13 @@ export class BrowserManager {
           if (
             this.crawlerSetting.maxPrice !== undefined &&
             cat.price > this.crawlerSetting.maxPrice
-          )
-           {
-            console.log('price is greater than max price: ', this.crawlerSetting.maxPrice)
+          ) {
+            console.log(
+              'price is greater than max price: ',
+              this.crawlerSetting.maxPrice
+            )
             return false
-           }
+          }
           return true
         })
       }
