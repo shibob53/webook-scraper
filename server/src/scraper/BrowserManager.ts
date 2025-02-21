@@ -694,6 +694,7 @@ export class BrowserManager {
         this.crawlerSetting?.maxTickets ?? 5,
         this.objectStateCache.length
       )
+      console.log('Batch size: ', batchSize)
       const seatsToSelect = this.objectStateCache.slice(0, batchSize)
       selectedSeats = seatsToSelect.map((seat) => seat.seatId)
       // Remove the selected seats from the global cache.
@@ -1126,6 +1127,8 @@ export class BrowserManager {
         })
         return objects
       })
+
+      console
       if (this.crawlerSetting) {
         if (this.crawlerSetting.minPrice !== undefined) {
           categories = categories.filter(
@@ -1174,10 +1177,12 @@ export class BrowserManager {
         }
         return objects
       })
+
       if (
         this.crawlerSetting &&
         (this.crawlerSetting.minPrice || this.crawlerSetting.maxPrice)
       ) {
+        
         objectStateCache = objectStateCache.filter((seat) => {
           const cat = this.categories.find((c) => c.key === seat.categoryKey)
           if (!cat) return false
@@ -1190,7 +1195,10 @@ export class BrowserManager {
             this.crawlerSetting.maxPrice !== undefined &&
             cat.price > this.crawlerSetting.maxPrice
           )
+           {
+            console.log('price is greater than max price: ', this.crawlerSetting.maxPrice)
             return false
+           }
           return true
         })
       }
