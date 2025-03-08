@@ -20,7 +20,6 @@ export const saveSettings = async (
   const useProxies = req.body.useProxies
   const discordWebhook = req.body.discordWebhook
   const recheckInterval = req.body.recheckInterval
-  const isStopped = req.body.isStopped
   const simConnections = req.body.simConnections
   const currentEventUrl = req.body.currentEventUrl
   //   const ramdomMode = req.body.ramdomMode // not used
@@ -51,7 +50,6 @@ export const saveSettings = async (
   setting.useProxies = useProxies
   setting.discordWebhook = discordWebhook
   setting.recheckInterval = recheckInterval
-  setting.isStopped = isStopped
   setting.simConnections = simConnections
   setting.currentEventUrl = currentEventUrl
 
