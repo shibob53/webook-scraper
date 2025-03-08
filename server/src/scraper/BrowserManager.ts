@@ -9,6 +9,7 @@ import { CrawlerSetting } from '../entity/CrawlerSetting'
 import { Proxy } from '../entity/Proxy'
 import { TicketGrab } from '../entity/TicketGrab'
 import axios from 'axios'
+import { BackgroundSeatsExtractor } from './BackgroundSeatExtractor'
 
 // Add the stealth plugin
 puppeteerExtra.use(StealthPlugin())
@@ -70,7 +71,7 @@ export class BrowserManager {
   private categories: Category[] = []
   private socket: Server | null | undefined
   // Flag to indicate if the global seats have been extracted
-  private isStopped: boolean = false
+  public isStopped: boolean = false
   private currentAccountIndex: number = 0
   private currentTicketCount: { [accountId: number]: number } = {}
   // Mutex to synchronize access to the seat cache
@@ -80,25 +81,66 @@ export class BrowserManager {
   private tickets: Array<Object>
   private activeContexts: Set<BrowserContext> = new Set()
   private limit: Limit
+  private backgroundExtractor: BackgroundSeatsExtractor | null = null
 
   public constructor(concurrency = 5) {
     this.concurrencyLimit = concurrency
     this.limit = pLimit(this.concurrencyLimit)
   }
 
-  public updateSettings(setting: CrawlerSetting, reinit = false) {
+  public async updateSettings(setting: CrawlerSetting, reinit = false) {
+
+    this.stop()
+    
     const socket = this.getSocket()
     BrowserManager.instance = null
-    BrowserManager.getInstance(
-      setting.simConnections,
-      socket,
-      setting
-    )
+    BrowserManager.getInstance(setting.simConnections, socket, setting)
 
-    this.limit.clearQueue()
     this.currentAccountIndex = -1
+    this.limit.clearQueue()
 
     console.log('settings updated for manager')
+  }
+
+  public getBrowser(): Browser | null {
+    return this.browser
+  }
+
+  public getFreeSeatsCount(): number {
+    return this.objectStateCache.filter((seat) => seat.status === 'free').length
+  }
+
+  public async startBackgroundExtraction(
+    eventUrl: string,
+    intervalMinutes: number = 2
+  ): Promise<void> {
+    // Ensure browser is initialized
+    if (!this.browser) {
+      await this.launchBrowser()
+    }
+
+    // Create background extractor if needed
+    if (!this.backgroundExtractor) {
+      const { BackgroundSeatsExtractor } = await import(
+        './BackgroundSeatExtractor'
+      )
+      this.backgroundExtractor = new BackgroundSeatsExtractor(
+        this,
+        intervalMinutes
+      )
+    }
+
+    // Start the background extraction
+    await this.backgroundExtractor.start(eventUrl)
+  }
+
+  /**
+   * Stop background seat extraction
+   */
+  public async stopBackgroundExtraction(): Promise<void> {
+    if (this.backgroundExtractor) {
+      await this.backgroundExtractor.stop()
+    }
   }
 
   /**
@@ -177,7 +219,7 @@ export class BrowserManager {
       }
     }
 
-    const headless = true
+    const headless = false
     this.browser = await puppeteerExtra.launch({
       headless,
       args,
@@ -189,6 +231,11 @@ export class BrowserManager {
    * Close the browser.
    */
   public async closeBrowser() {
+    if (this.backgroundExtractor) {
+      await this.backgroundExtractor.stop()
+      this.backgroundExtractor = null
+    }
+
     for (const context of this.activeContexts) {
       try {
         await context.close()
@@ -252,6 +299,11 @@ export class BrowserManager {
     if (await this.eventUsesSeatsio(tempPage)) {
       await this.extractCategories(tempPage)
       await this.extractSeats(tempPage)
+
+      if (eventUrl) {
+        const interval = 0.5
+        await this.startBackgroundExtraction(eventUrl, interval)
+      }
     }
     await tempContext.close()
 
@@ -562,7 +614,7 @@ export class BrowserManager {
     await page.type('input[name="email"]', account.email)
     await page.type('input[name="password"]', account.password)
     await page.keyboard.press('Enter')
-    await page.waitForNavigation({ waitUntil: 'networkidle0' })
+    await page.waitForNavigation()
     console.log(`Logged in as ${account.email}`)
   }
 
@@ -684,9 +736,7 @@ export class BrowserManager {
     let details: any[] = []
     try {
       // If the cache is empty, refresh it.
-      if (this.objectStateCache.length === 0) {
-        await this.extractSeats(page)
-      }
+      await this.extractSeats(page)
       // Apply filtering: only keep seats that are free and pass price criteria.
       this.objectStateCache = this.objectStateCache.filter((seat) => {
         const cat = this.categories.find((c) => c.key === seat.categoryKey)
@@ -732,6 +782,7 @@ export class BrowserManager {
     holdToken = await page.evaluate((seats) => {
       // @ts-ignore: assuming seatsio is available globally in the page context
       seatsio.charts[0].trySelectObjects(seats)
+      // @ts-ignore
       return seatsio.charts[0].holdToken
     }, selectedSeats)
     return { selectedSeats, details, holdToken }
@@ -839,7 +890,7 @@ export class BrowserManager {
   /**
    * Check if the event page uses Seats.io.
    */
-  private async eventUsesSeatsio(page: Page): Promise<boolean> {
+  public async eventUsesSeatsio(page: Page): Promise<boolean> {
     try {
       await page.waitForSelector('[title="seating chart"]', { timeout: 1000 })
       return true
@@ -851,7 +902,7 @@ export class BrowserManager {
   /**
    * Get event tickets from the API.
    */
-  private async getEventTickets(
+  public async getEventTickets(
     eventUrl: string,
     account?: WebookAccount,
     page?: Page | null | undefined
@@ -1113,7 +1164,7 @@ export class BrowserManager {
   /**
    * Extract seating categories from the seating chart iframe.
    */
-  private async extractCategories(page: Page) {
+  public async extractCategories(page: Page) {
     try {
       await page.waitForSelector('[title="seating chart"]', { timeout: 60000 })
       const iframeElement = await page.$('iframe[title="seating chart"]')
@@ -1165,7 +1216,7 @@ export class BrowserManager {
   /**
    * Extract seat availability data from the seating chart iframe.
    */
-  private async extractSeats(page: Page) {
+  public async extractSeats(page: Page) {
     try {
       await page.waitForSelector('[title="seating chart"]', { timeout: 60000 })
       const iframeElement = await page.$('iframe[title="seating chart"]')
@@ -1236,7 +1287,7 @@ export class BrowserManager {
     // Close all active contexts
     for (const context of this.activeContexts) {
       try {
-        await context.close()
+        context.close()
       } catch (err) {
         console.error('Error closing context:', err)
       }

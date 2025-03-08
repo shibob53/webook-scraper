@@ -63,13 +63,6 @@ const start = async () => {
   url.value = ''
 }
 
-watch(
-  () => store.settings.currentEventUrl,
-  () => {
-    console.log(store)
-    store.resetSettings()
-  },
-)
 </script>
 
 <template>
