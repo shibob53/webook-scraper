@@ -219,7 +219,7 @@ export class BrowserManager {
       }
     }
 
-    const headless = false
+    const headless = true
     this.browser = await puppeteerExtra.launch({
       headless,
       args,
