@@ -4,7 +4,7 @@
   "main": "index.js",
   "scripts": {
     "build": "swc src --out-dir dist --config-file .swcrc",
-    "start": "node src/index.js",
+    "start": "node dist/src/index.js",
     "dev": "nodemon --watch src --ext ts --exec \"npm run build && npm start\"",
     "typeorm": "typeorm-ts-node-commonjs",
     "db:seed": "node src/database/seed.js"
